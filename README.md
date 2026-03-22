@@ -86,7 +86,17 @@ nexus/
 │   └── index.css          # Global styles
 ├── public/
 │   └── manifest.json      # PWA manifest
-├── DATABASE_SETUP.md      # Database setup guide
+├── documentation/         # Documentation folder
+│   ├── index.md           # Master documentation index
+│   ├── architecture.md    # System architecture
+│   ├── database_schema.md # DB schema & security
+│   ├── api_services.md    # API and services map
+│   ├── components.md      # React components overview
+│   ├── DATABASE_SETUP.md  # Database setup guide
+│   ├── PROJECT_SUMMARY.md # Project summary
+│   ├── QUICK_START.md     # Quick start guide
+│   ├── DISABLE_EMAIL_CONFIRMATION.md # Role config
+│   └── USER_DELETION_GUIDE.md # Account management
 └── README.md              # This file
 ```
 
@@ -112,7 +122,7 @@ nexus/
 
 3. **Set up database**
 
-   Follow the instructions in `DATABASE_SETUP.md` to set up your Supabase database tables and create your first admin user.
+   Follow the instructions in `documentation/DATABASE_SETUP.md` to set up your Supabase database tables and create your first admin user.
 
 4. **Start development server**
    ```bash
@@ -347,7 +357,7 @@ Potential features for future versions:
 
 For issues or questions:
 
-1. Check the DATABASE_SETUP.md guide
+1. Check the documentation/DATABASE_SETUP.md guide
 2. Review Supabase dashboard for errors
 3. Check browser console for error messages
 4. Verify all dependencies are installed
