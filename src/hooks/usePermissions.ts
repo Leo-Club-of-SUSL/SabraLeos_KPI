@@ -5,6 +5,8 @@ export function usePermissions() {
 
     const canEdit = appUser?.role === 'super_admin' || appUser?.role === 'editor';
     const canManageUsers = appUser?.role === 'super_admin';
+    const canViewLogs = appUser?.role === 'super_admin' || appUser?.role === 'editor';
+    const canAccessManagement = appUser?.role === 'super_admin' || appUser?.role === 'editor';
     const isViewer = appUser?.role === 'viewer';
     const isEditor = appUser?.role === 'editor';
     const isSuperAdmin = appUser?.role === 'super_admin';
@@ -12,6 +14,8 @@ export function usePermissions() {
     return {
         canEdit,
         canManageUsers,
+        canViewLogs,
+        canAccessManagement,
         isViewer,
         isEditor,
         isSuperAdmin,

@@ -1,5 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { validatePoints } from '../lib/sanitize';
+import { logService } from './log-service';
+import { userService } from './user-service';
 import type { Contribution, ContributionInsert } from '../types/database';
 
 export const contributionService = {
@@ -41,6 +43,17 @@ export const contributionService = {
       .single();
 
     if (error) throw error;
+
+    const authUser = await userService.getCurrentUser();
+    await logService.log({
+      user_id: authUser?.id,
+      user_name: authUser?.username,
+      action: 'CREATE_CONTRIBUTION',
+      entity_type: 'contribution',
+      entity_id: (data as any).id,
+      details: { member: contribution.member_reg_no, points: contribution.points }
+    });
+
     return data as unknown as Contribution;
   },
 
@@ -88,6 +101,15 @@ export const contributionService = {
       .eq('id', id);
 
     if (error) throw error;
+
+    const authUser = await userService.getCurrentUser();
+    await logService.log({
+      user_id: authUser?.id,
+      user_name: authUser?.username,
+      action: 'DELETE_CONTRIBUTION',
+      entity_type: 'contribution',
+      entity_id: id
+    });
   },
 
   async getMonthlyLeaderboard(year: number, month: number): Promise<{ reg_no: string; monthly_points: number }[]> {

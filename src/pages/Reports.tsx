@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
+import { systemService } from '../services/system-service';
 import { Filter, Download, Calendar, Users as UsersIcon, TrendingUp } from 'lucide-react';
-import type { Member, Contribution } from '../types/database';
+import type { Member, Contribution, Faculty } from '../types/database';
 import { ExportOptionsModal, type ColumnOption } from '../components/ExportOptionsModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -11,6 +12,7 @@ export function Reports() {
   const [members, setMembers] = useState<Member[]>([]);
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<Member[]>([]);
+  const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [filters, setFilters] = useState({
@@ -20,26 +22,18 @@ export function Reports() {
     faculty: '',
   });
 
-  const faculties = [
-    'Faculty of Social Sciences and Languages',
-    'Faculty of Agriculture Sciences',
-    'Faculty of Applied Sciences',
-    'Faculty of Geomatics',
-    'Faculty of Management Studies',
-    'Faculty of Medicine',
-    'Faculty of Computing',
-    'Faculty of Technology',
-  ];
 
   const loadData = async () => {
     try {
-      const [membersData, contributionsData] = await Promise.all([
+      const [membersData, contributionsData, facultiesData] = await Promise.all([
         memberService.getAll(),
         contributionService.getAll(),
+        systemService.getFaculties(),
       ]);
 
       setMembers(membersData);
       setContributions(contributionsData);
+      setFaculties(facultiesData);
       setFilteredMembers(membersData);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -135,11 +129,13 @@ export function Reports() {
     if (format === 'csv') {
       let csvContent = '';
       if (includeHeaders) {
-        csvContent += headers.join(',') + '\n';
+        csvContent += headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\n';
       }
-      csvContent += rows.map((row) => row.join(',')).join('\n');
+      csvContent += rows
+        .map((row) => row.map((val) => `"${String(val ?? '').replace(/"/g, '""')}"`).join(','))
+        .join('\n');
 
-      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -286,12 +282,12 @@ export function Reports() {
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="">All Faculties</option>
-              {faculties.map((faculty) => (
-                <option key={faculty} value={faculty}>
-                  {faculty}
-                </option>
-              ))}
-            </select>
+            {faculties.map((f) => (
+              <option key={f.id} value={f.name}>
+                {f.name}
+              </option>
+            ))}
+          </select>
           </div>
         </div>
 

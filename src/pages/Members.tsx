@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
-import { Search, UserPlus, Award, User, X, FileDown, Pencil } from 'lucide-react';
+import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download } from 'lucide-react';
 import type { Member, Contribution } from '../types/database';
 import { NewMemberForm } from '../components/NewMemberForm';
 import { EditMemberForm } from '../components/EditMemberForm';
 import { AddContributionForm } from '../components/AddContributionForm';
 import { BulkImportModal } from '../components/BulkImportModal';
 import { usePermissions } from '../hooks/usePermissions';
+import { downloadImage } from '../lib/image-utils';
 
 interface MembersProps {
   initialSearch?: string;
@@ -271,11 +272,20 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                 <X className="w-5 h-5" />
               </button>
               {searchResult.photo_url ? (
-                <img
-                  src={searchResult.photo_url}
-                  alt={searchResult.full_name}
-                  className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
-                />
+                <div className="relative group/photo">
+                  <img
+                    src={searchResult.photo_url}
+                    alt={searchResult.full_name}
+                    className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
+                  />
+                  <button
+                    onClick={() => downloadImage(searchResult.photo_url!, `${searchResult.reg_no.replace(/\//g, '_')}_photo.jpg`)}
+                    className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/photo:opacity-100 transition-opacity duration-200"
+                    title="Download Photo"
+                  >
+                    <Download className="w-6 h-6 text-white" />
+                  </button>
+                </div>
               ) : (
                 <div className="w-24 h-24 rounded-full bg-white flex items-center justify-center shadow-lg">
                   <span className="text-4xl font-bold text-maroon-600">

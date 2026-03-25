@@ -112,6 +112,7 @@ export function LoginScreen() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoFocus
                 required
                 className="w-full bg-white text-black px-4 py-3 font-bold text-base shadow-md border-none focus:ring-2 focus:ring-maroon-600 outline-none placeholder-black/60 text-center rounded-xl"
                 placeholder="USER NAME OR EMAIL"

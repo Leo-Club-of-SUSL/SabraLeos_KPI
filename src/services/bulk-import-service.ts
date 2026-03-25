@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { memberService } from './member-service';
+import { systemService } from './system-service';
 import type { MemberInsert } from '../types/database';
 
 export interface ImportResult {
@@ -22,14 +23,22 @@ export const bulkImportService = {
     /**
      * Generate and download a template Excel file
      */
-    downloadTemplate(): void {
+    async downloadTemplate(): Promise<void> {
+        const [faculties, batches] = await Promise.all([
+            systemService.getFaculties(),
+            systemService.getBatches(),
+        ]);
+
+        const sampleFaculty = faculties[0]?.name || 'Faculty of Computing';
+        const sampleBatch = batches[0]?.name || '2023/2024';
+
         const templateData = [
             {
                 reg_no: 'S/2021/001',
                 full_name: 'John Doe Smith',
                 name_with_initials: 'J.D. Smith',
-                batch: '2021',
-                faculty: 'Faculty of Computing',
+                batch: sampleBatch,
+                faculty: sampleFaculty,
                 whatsapp: '+94771234567',
                 my_lci_num: '12345678',
             },
@@ -37,8 +46,8 @@ export const bulkImportService = {
                 reg_no: 'S/2021/002',
                 full_name: 'Jane Mary Johnson',
                 name_with_initials: 'J.M. Johnson',
-                batch: '2021',
-                faculty: 'Faculty of Applied Sciences',
+                batch: sampleBatch,
+                faculty: sampleFaculty,
                 whatsapp: '+94777654321',
                 my_lci_num: '',
             },
@@ -171,7 +180,7 @@ export const bulkImportService = {
 
                 // Create member
                 const memberData: MemberInsert = {
-                    reg_no: row.reg_no.trim(),
+                    reg_no: row.reg_no.trim().toUpperCase(),
                     full_name: row.full_name.trim(),
                     name_with_initials: row.name_with_initials.trim(),
                     batch: row.batch.toString().trim(),

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { userService } from '../services/user-service';
 import { memberService } from '../services/member-service';
-import { UserPlus, Shield, Eye, EyeOff, Edit as EditIcon, Loader2, X, Trash2 } from 'lucide-react';
+import { UserPlus, Shield, Edit as EditIcon, Eye, EyeOff, Loader2, X, Trash2, Settings, Users as UsersIcon, ListTree } from 'lucide-react';
+import { SystemDataManagement } from '../components/SystemDataManagement';
+import { SystemLogs } from '../components/SystemLogs';
 import type { AppUser, Member } from '../types/database';
 import { usePermissions } from '../hooks/usePermissions';
 import { validatePassword } from '../lib/sanitize';
@@ -12,7 +14,8 @@ export function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
-  const { canManageUsers } = usePermissions();
+  const [activeTab, setActiveTab] = useState<'users' | 'system' | 'logs'>('system');
+  const permissions = usePermissions();
 
   useEffect(() => {
     loadData();
@@ -98,7 +101,7 @@ export function UserManagement() {
   }
 
   // Access control check
-  if (!canManageUsers) {
+  if (!permissions.canAccessManagement) {
     return (
       <div className="space-y-6">
         <div>
@@ -135,150 +138,199 @@ export function UserManagement() {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="flex items-center gap-2 px-6 py-3 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
-        >
-          <UserPlus className="w-5 h-5" />
-          Create User
-        </button>
+        <div className="flex bg-gray-100 dark:bg-white/5 p-1 rounded-xl w-fit">
+          {permissions.canManageUsers && (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all duration-200 ${
+                activeTab === 'users'
+                  ? 'bg-white dark:bg-gray-700 text-maroon-600 dark:text-neon-blue shadow-lg scale-[1.02]'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              <UsersIcon className="w-4 h-4" />
+              USER ACCOUNTS
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab('system')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all duration-200 ${
+              activeTab === 'system'
+                ? 'bg-white dark:bg-gray-700 text-maroon-600 dark:text-neon-blue shadow-lg scale-[1.02]'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            SYSTEM DATA
+          </button>
+          {permissions.canViewLogs && (
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all duration-200 ${
+                activeTab === 'logs'
+                  ? 'bg-white dark:bg-gray-700 text-maroon-600 dark:text-neon-blue shadow-lg scale-[1.02]'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              <ListTree className="w-4 h-4" />
+              SYSTEM LOGS
+            </button>
+          )}
+        </div>
+
+        {activeTab === 'users' && (
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
+          >
+            <UserPlus className="w-5 h-5" />
+            Create User
+          </button>
+        )}
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-700">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Username
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Designation
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Role
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Linked Member
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Created
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {users.length === 0 ? (
+      {activeTab === 'users' && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No users found
-                  </td>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Username
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Designation
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Role
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Linked Member
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ) : (
-                users.map((user) => (
-                  <tr
-                    key={user.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="w-10 h-10 rounded-full bg-maroon-100 dark:bg-maroon-900/20 flex items-center justify-center">
-                          <span className="text-sm font-bold text-maroon-600 dark:text-maroon-400">
-                            {user.username.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="ml-3">
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">
-                            {user.username}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                      {user.designation}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        {getRoleIcon(user.role)}
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {getRoleLabel(user.role)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      {getMemberName(user.linked_member_reg_no)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      {new Date(user.created_at).toLocaleDateString()}
-                    </td>
-
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => {
-                            setEditingUser(user);
-                            setShowCreateForm(true);
-                          }}
-                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                          title="Edit User"
-                        >
-                          <EditIcon className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(user.id, user.username, user.role)}
-                          disabled={user.role === 'super_admin' && users.filter(u => u.role === 'super_admin').length <= 1}
-                          className={`p-2 rounded-lg transition-colors ${user.role === 'super_admin' && users.filter(u => u.role === 'super_admin').length <= 1
-                            ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
-                            : 'text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20'
-                            }`}
-                          title={
-                            user.role === 'super_admin' && users.filter(u => u.role === 'super_admin').length <= 1
-                              ? 'Cannot delete the last Super Admin'
-                              : 'Delete User'
-                          }
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                      No users found
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                ) : (
+                  users.map((user) => (
+                    <tr
+                      key={user.id}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="w-10 h-10 rounded-full bg-maroon-100 dark:bg-maroon-900/20 flex items-center justify-center">
+                            <span className="text-sm font-bold text-maroon-600 dark:text-maroon-400">
+                              {user.username.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="ml-3">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              {user.username}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                        {user.designation}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {getRoleIcon(user.role)}
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {getRoleLabel(user.role)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                        {getMemberName(user.linked_member_reg_no)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                        {new Date(user.created_at).toLocaleDateString()}
+                      </td>
 
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          Role Descriptions
-        </h3>
-        <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-          <div className="flex items-start gap-2">
-            <Shield className="w-4 h-4 text-red-500 mt-0.5" />
-            <div>
-              <span className="font-medium text-gray-900 dark:text-white">Super Admin:</span> Can
-              create users, manage all members and contributions
-            </div>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingUser(user);
+                              setShowCreateForm(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            title="Edit User"
+                          >
+                            <EditIcon className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(user.id, user.username, user.role)}
+                            disabled={user.role === 'super_admin' && users.filter(u => u.role === 'super_admin').length <= 1}
+                            className={`p-2 rounded-lg transition-colors ${user.role === 'super_admin' && users.filter(u => u.role === 'super_admin').length <= 1
+                              ? 'text-gray-300 cursor-not-allowed dark:text-gray-600'
+                              : 'text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20'
+                              }`}
+                            title={
+                              user.role === 'super_admin' && users.filter(u => u.role === 'super_admin').length <= 1
+                                ? 'Cannot delete the last Super Admin'
+                                : 'Delete User'
+                            }
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-          <div className="flex items-start gap-2">
-            <EditIcon className="w-4 h-4 text-blue-500 mt-0.5" />
-            <div>
-              <span className="font-medium text-gray-900 dark:text-white">Editor:</span> Can add
-              members and contributions, but cannot create users
+        </div>
+      )}
+
+      {activeTab === 'system' && <SystemDataManagement />}
+      {activeTab === 'logs' && <SystemLogs />}
+
+      {activeTab === 'users' && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            Role Descriptions
+          </h3>
+          <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+            <div className="flex items-start gap-2">
+              <Shield className="w-4 h-4 text-red-500 mt-0.5" />
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">Super Admin:</span> Can
+                create users, manage all members and contributions
+              </div>
             </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Eye className="w-4 h-4 text-gray-500 mt-0.5" />
-            <div>
-              <span className="font-medium text-gray-900 dark:text-white">Viewer:</span> Read-only
-              access to all data
+            <div className="flex items-start gap-2">
+              <EditIcon className="w-4 h-4 text-blue-500 mt-0.5" />
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">Editor:</span> Can add
+                members and contributions, but cannot create users
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Eye className="w-4 h-4 text-gray-500 mt-0.5" />
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">Viewer:</span> Read-only
+                access to all data
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {showCreateForm && (
         <UserModal

@@ -35,11 +35,37 @@ CREATE TABLE IF NOT EXISTS public.contributions (
 -- App Users Table (Profiles)
 CREATE TABLE IF NOT EXISTS public.app_users (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    username TEXT NOT NULL,
+    username TEXT UNIQUE NOT NULL,
     designation TEXT NOT NULL,
-    role TEXT CHECK (role IN ('super_admin', 'editor', 'viewer')) NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('super_admin', 'editor', 'viewer')),
     linked_member_reg_no TEXT REFERENCES public.members(reg_no) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Faculties Table
+CREATE TABLE IF NOT EXISTS public.faculties (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Batches Table
+CREATE TABLE IF NOT EXISTS public.batches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- System Logs Table
+CREATE TABLE IF NOT EXISTS public.system_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMPTZ DEFAULT NOW(),
+    user_id UUID REFERENCES auth.users(id),
+    user_name TEXT,
+    action TEXT NOT NULL,
+    details JSONB,
+    entity_type TEXT,
+    entity_id TEXT
 );
 
 -- 2. Security Setup (RLS)
@@ -49,6 +75,9 @@ CREATE TABLE IF NOT EXISTS public.app_users (
 ALTER TABLE public.members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.contributions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.faculties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to get the current user's role
 CREATE OR REPLACE FUNCTION public.get_my_role()
@@ -60,7 +89,7 @@ $$;
 CREATE POLICY "members_select" ON public.members FOR SELECT TO authenticated USING (true);
 CREATE POLICY "members_insert" ON public.members FOR INSERT TO authenticated WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
 CREATE POLICY "members_update" ON public.members FOR UPDATE TO authenticated USING (public.get_my_role() IN ('super_admin','editor')) WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
-CREATE POLICY "members_delete" ON public.members FOR DELETE TO authenticated USING (public.get_my_role() = 'super_admin');
+CREATE POLICY "members_delete" ON public.members FOR DELETE TO authenticated USING (public.get_my_role() IN ('super_admin','editor'));
 
 -- Contributions Policies
 CREATE POLICY "contributions_select" ON public.contributions FOR SELECT TO authenticated USING (true);
@@ -73,6 +102,18 @@ CREATE POLICY "app_users_select" ON public.app_users FOR SELECT TO authenticated
 CREATE POLICY "app_users_insert" ON public.app_users FOR INSERT TO authenticated WITH CHECK (public.get_my_role() = 'super_admin');
 CREATE POLICY "app_users_update" ON public.app_users FOR UPDATE TO authenticated USING (public.get_my_role() = 'super_admin' OR id = auth.uid()) WITH CHECK (public.get_my_role() = 'super_admin' OR id = auth.uid());
 CREATE POLICY "app_users_delete" ON public.app_users FOR DELETE TO authenticated USING (public.get_my_role() = 'super_admin');
+
+-- Faculties Policies
+CREATE POLICY "faculties_select" ON public.faculties FOR SELECT TO authenticated USING (true);
+CREATE POLICY "faculties_all" ON public.faculties FOR ALL TO authenticated USING (public.get_my_role() IN ('super_admin','editor')) WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
+
+-- Batches Policies
+CREATE POLICY "batches_select" ON public.batches FOR SELECT TO authenticated USING (true);
+CREATE POLICY "batches_all" ON public.batches FOR ALL TO authenticated USING (public.get_my_role() IN ('super_admin','editor')) WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
+
+-- System Logs Policies
+CREATE POLICY "system_logs_select" ON public.system_logs FOR SELECT TO authenticated USING (public.get_my_role() IN ('super_admin', 'editor'));
+CREATE POLICY "system_logs_insert" ON public.system_logs FOR INSERT TO authenticated WITH CHECK (true);
 
 -- Storage Policies (Run this manually in the Storage tab or SQL editor carefully)
 -- These assume a bucket named 'members' exists

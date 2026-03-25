@@ -13,8 +13,12 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDownloadTemplate = () => {
-    bulkImportService.downloadTemplate();
+  const handleDownloadTemplate = async () => {
+    try {
+      await bulkImportService.downloadTemplate();
+    } catch (error) {
+      alert('Failed to download template. Please check your connection.');
+    }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {

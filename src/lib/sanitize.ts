@@ -90,7 +90,8 @@ export function validatePhoneNumber(phone: string): boolean {
 }
 
 export function validateRegNo(regNo: string): boolean {
-  return /^[A-Z]{1,3}\/\d{4}\/\d{1,4}$/.test(regNo);
+  // Relaxed as per user request: allow any Alphanumeric characters, will save as upper case
+  return regNo.trim().length >= 3;
 }
 
 export function validatePoints(value: number): { valid: boolean; error?: string } {

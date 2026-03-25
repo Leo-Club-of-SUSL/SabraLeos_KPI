@@ -1,5 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { sanitizeSearchQuery } from '../lib/sanitize';
+import { logService } from './log-service';
+import { userService } from './user-service';
 import type { Member, MemberInsert, MemberUpdate } from '../types/database';
 
 export const memberService = {
@@ -50,11 +52,22 @@ export const memberService = {
     const { data, error } = await supabase
       .from('members')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .insert(member as any)
+      .insert({ ...member, reg_no: member.reg_no.toUpperCase() } as any)
       .select()
-      .single();
+      .single() as any;
 
     if (error) throw error;
+
+    const user = await userService.getCurrentUser();
+    await logService.log({
+      user_id: user?.id,
+      user_name: user?.username,
+      action: 'CREATE_MEMBER',
+      entity_type: 'member',
+      entity_id: data.reg_no,
+      details: { name: data.full_name }
+    });
+
     return data;
   },
 
@@ -64,32 +77,40 @@ export const memberService = {
       // @ts-expect-error: Suppress type mismatch
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .update(updates as any)
-      .eq('reg_no', regNo)
+      .ilike('reg_no', regNo)
       .select()
       .single();
 
     if (error) throw error;
+
+    const user = await userService.getCurrentUser();
+    await logService.log({
+      user_id: user?.id,
+      user_name: user?.username,
+      action: 'UPDATE_MEMBER',
+      entity_type: 'member',
+      entity_id: regNo,
+      details: updates
+    });
+
     return data;
   },
 
   async uploadPhoto(file: File, oldPhotoUrl?: string | null): Promise<string> {
     const { validatePhotoFile } = await import('../lib/sanitize');
+    const { optimizeImage } = await import('../lib/image-utils');
     const validation = validatePhotoFile(file);
     if (!validation.valid) throw new Error(validation.error);
 
-    const EXT_MAP: Record<string, string> = {
-      'image/jpeg': 'jpg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-      'image/gif': 'gif',
-    };
-    const ext = EXT_MAP[file.type] ?? 'jpg';
+    // Optimize image before upload
+    const optimizedBlob = await optimizeImage(file, { maxWidth: 1024, quality: 0.8 });
+    const ext = 'jpg';
     const randomId = crypto.randomUUID();
     const filePath = `member-photos/${randomId}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from('members')
-      .upload(filePath, file, { contentType: file.type, upsert: false });
+      .upload(filePath, optimizedBlob, { contentType: 'image/jpeg', upsert: false });
 
     if (uploadError) throw uploadError;
 
@@ -118,5 +139,23 @@ export const memberService = {
 
     if (error) throw error;
     return data || [];
+  },
+
+  async delete(regNo: string): Promise<void> {
+    const { error } = await supabase
+      .from('members')
+      .delete()
+      .ilike('reg_no', regNo);
+
+    if (error) throw error;
+
+    const user = await userService.getCurrentUser();
+    await logService.log({
+      user_id: user?.id,
+      user_name: user?.username,
+      action: 'DELETE_MEMBER',
+      entity_type: 'member',
+      entity_id: regNo
+    });
   },
 };

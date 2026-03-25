@@ -2,9 +2,10 @@ import { createContext, useContext, useEffect, useState, useRef, useCallback, Re
 import { supabase } from '../lib/supabase';
 import type { AppUser } from '../types/database';
 import { userService } from '../services/user-service';
+import { logService } from '../services/log-service';
 import type { User } from '@supabase/supabase-js';
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 interface AuthContextType {
   user: User | null;
@@ -21,6 +22,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // One-time migration: Clear old persistent localStorage sessions
+  // to enforce the new sessionStorage-only policy immediately.
+  useEffect(() => {
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to clear old session data:', e);
+    }
+  }, []);
 
   const loadUser = async () => {
     setLoading(true);
@@ -70,6 +86,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       throw error;
+    }
+
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (authUser) {
+      const userData = await userService.getCurrentUser();
+      await logService.log({
+        user_id: authUser.id,
+        user_name: userData?.username || authUser.email,
+        action: 'LOGIN',
+        details: { method: 'password' }
+      });
     }
 
     await loadUser();

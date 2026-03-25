@@ -75,6 +75,35 @@ export async function seedMockData() {
     if (membersError) {
       console.error('Error seeding members:', membersError);
     }
+
+    // Seed Faculties
+    const { data: existingFaculties } = await supabase.from('faculties').select('id').limit(1);
+    if (!existingFaculties || existingFaculties.length === 0) {
+      const initialFaculties = [
+        { name: 'Faculty of Social Sciences and Languages' },
+        { name: 'Faculty of Agriculture Sciences' },
+        { name: 'Faculty of Applied Sciences' },
+        { name: 'Faculty of Geomatics' },
+        { name: 'Faculty of Management Studies' },
+        { name: 'Faculty of Medicine' },
+        { name: 'Faculty of Computing' },
+        { name: 'Faculty of Technology' },
+      ];
+      await supabase.from('faculties').insert(initialFaculties as any);
+    }
+
+    // Seed Batches
+    const { data: existingBatches } = await supabase.from('batches').select('id').limit(1);
+    if (!existingBatches || existingBatches.length === 0) {
+      const initialBatches = [
+        { name: '2019/2020' },
+        { name: '2020/2021' },
+        { name: '2021/2022' },
+        { name: '2022/2023' },
+        { name: '2023/2024' },
+      ];
+      await supabase.from('batches').insert(initialBatches as any);
+    }
   } catch (error) {
     console.error('Seeding error:', error);
   }

@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { memberService } from '../services/member-service';
+import { systemService } from '../services/system-service';
 import { Camera, Loader2, X } from 'lucide-react';
 import { validatePhotoFile, validatePhoneNumber, sanitizeTextInput } from '../lib/sanitize';
-import type { Member } from '../types/database';
+import type { Member, Faculty, Batch as BatchType } from '../types/database';
 
 interface EditMemberFormProps {
   member: Member;
@@ -25,19 +26,30 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
   const [photoError, setPhotoError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState('');
+  const [faculties, setFaculties] = useState<Faculty[]>([]);
+  const [batches, setBatches] = useState<BatchType[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const faculties = [
-    'Faculty of Social Sciences and Languages',
-    'Faculty of Agriculture Sciences',
-    'Faculty of Applied Sciences',
-    'Faculty of Geomatics',
-    'Faculty of Management Studies',
-    'Faculty of Medicine',
-    'Faculty of Computing',
-    'Faculty of Technology',
-  ];
+  useEffect(() => {
+    const loadSystemData = async () => {
+      try {
+        const [fData, bData] = await Promise.all([
+          systemService.getFaculties(),
+          systemService.getBatches()
+        ]);
+        setFaculties(fData);
+        setBatches(bData);
+      } catch (err) {
+        console.error('Error loading form metadata:', err);
+      } finally {
+        setDataLoading(false);
+      }
+    };
+    loadSystemData();
+  }, []);
+
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPhotoError('');
@@ -67,7 +79,7 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
     const errors: Record<string, string> = {};
     if (!formData.full_name.trim()) errors.full_name = 'Full Name is required';
     if (!formData.name_with_initials.trim()) errors.name_with_initials = 'Name with Initials is required';
-    if (!/^\d{4}$/.test(formData.batch)) errors.batch = 'Batch must be a 4-digit year';
+    if (!formData.batch) errors.batch = 'Batch selection is required';
     if (!formData.faculty) errors.faculty = 'Faculty selection is required';
     if (!validatePhoneNumber(formData.whatsapp)) errors.whatsapp = 'Invalid phone number format';
     
@@ -118,7 +130,12 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Edit Member Details</h2>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {dataLoading ? (
+          <div className="flex items-center justify-center p-12">
+            <Loader2 className="w-8 h-8 animate-spin text-maroon-600" />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-6">
           <div className="flex justify-center">
             <div className="relative">
               <div
@@ -202,13 +219,19 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Batch <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
+              <select
                 value={formData.batch}
                 onChange={(e) => setFormData({ ...formData, batch: e.target.value })}
                 required
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
+              >
+                <option value="">Select Batch</option>
+                {batches.map((batch) => (
+                  <option key={batch.id} value={batch.name}>
+                    {batch.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -223,8 +246,8 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
               >
                 <option value="">Select Faculty</option>
                 {faculties.map((faculty) => (
-                  <option key={faculty} value={faculty}>
-                    {faculty}
+                  <option key={faculty.id} value={faculty.name}>
+                    {faculty.name}
                   </option>
                 ))}
               </select>
@@ -287,6 +310,7 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

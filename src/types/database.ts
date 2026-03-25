@@ -43,6 +43,18 @@ export interface Database {
           }
         ];
       };
+      faculties: {
+        Row: Faculty;
+        Insert: FacultyInsert;
+        Update: FacultyUpdate;
+        Relationships: [];
+      };
+      batches: {
+        Row: Batch;
+        Insert: BatchInsert;
+        Update: BatchUpdate;
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never
@@ -147,4 +159,32 @@ export interface AppUserUpdate {
   designation?: string;
   role?: 'super_admin' | 'editor' | 'viewer';
   linked_member_reg_no?: string | null;
+}
+
+export interface Faculty {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface FacultyInsert {
+  name: string;
+}
+
+export interface FacultyUpdate {
+  name?: string;
+}
+
+export interface Batch {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface BatchInsert {
+  name: string;
+}
+
+export interface BatchUpdate {
+  name?: string;
 }
