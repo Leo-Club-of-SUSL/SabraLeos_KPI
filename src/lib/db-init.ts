@@ -9,8 +9,19 @@ export async function initializeDatabase() {
       .select('reg_no')
       .limit(1);
 
-    if (tablesError && tablesError.code === '42P01') {
-      console.warn('Database tables not found. Please run migrations manually.');
+    if (tablesError) {
+      // 42P01: Table not found (uninitialized)
+      if (tablesError.code === '42P01') {
+        console.warn('Database tables not found. Please run migrations manually.');
+        return false;
+      }
+      // 401: Unauthorized (RLS active, which means table exists but we aren't logged in)
+      if (tablesError.code === '401' || (tablesError as any).status === 401) {
+        console.info('Database initialized and secured with RLS.');
+        return true;
+      }
+      
+      console.error('Database check error:', tablesError);
       return false;
     }
 

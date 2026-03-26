@@ -25,7 +25,7 @@ function AppContent() {
       setDbInitialized(initialized);
 
       if (initialized) {
-        await seedMockData();
+        // await seedMockData();
       }
 
       setDbLoading(false);
