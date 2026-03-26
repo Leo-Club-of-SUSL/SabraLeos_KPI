@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
-import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download } from 'lucide-react';
+import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download, Trash2 } from 'lucide-react';
 import type { Member, Contribution } from '../types/database';
 import { NewMemberForm } from '../components/NewMemberForm';
 import { EditMemberForm } from '../components/EditMemberForm';
@@ -157,6 +157,27 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
     loadMembers(); // Reload list after bulk import
     if (searchResult) {
       handleSearch(searchResult.reg_no);
+    }
+  };
+
+  const handleDeleteMember = async () => {
+    if (!searchResult) return;
+    
+    if (!window.confirm(`Are you sure you want to delete ${searchResult.full_name}? This action cannot be undone and will delete all their contribution history.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await memberService.delete(searchResult.reg_no);
+      setSearchResult(null);
+      setSearchQuery('');
+      loadMembers();
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete member. They may have related records that prevent deletion or you may not have sufficient permissions.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -384,6 +405,13 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                     >
                       <Pencil className="w-5 h-5" />
                       Edit Member Details
+                    </button>
+                    <button
+                      onClick={handleDeleteMember}
+                      className="flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/30 rounded-xl font-medium transition-all duration-200"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      Delete Member
                     </button>
                   </div>
                 ) : (
