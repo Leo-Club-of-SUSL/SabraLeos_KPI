@@ -48,7 +48,7 @@ export async function seedMockData() {
 
     const mockMembers = [
       {
-        reg_no: 'S/2021/001',
+        reg_no: '22ABC1234',
         full_name: 'Saman Kumara Perera',
         name_with_initials: 'S.K. Perera',
         batch: '2021',
@@ -58,7 +58,7 @@ export async function seedMockData() {
         total_points: 0,
       },
       {
-        reg_no: 'S/2021/002',
+        reg_no: '22ABC1235',
         full_name: 'Nimal Rajapakse Silva',
         name_with_initials: 'N.R. Silva',
         batch: '2021',
@@ -68,7 +68,7 @@ export async function seedMockData() {
         total_points: 0,
       },
       {
-        reg_no: 'S/2022/001',
+        reg_no: '23XYZ7890',
         full_name: 'Kamal Wickramasinghe Fernando',
         name_with_initials: 'K.W. Fernando',
         batch: '2022',

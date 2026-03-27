@@ -142,7 +142,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Enter University Reg No (e.g., S/2021/001)"
+            placeholder="Enter University Reg No (e.g., 22ABC1234)"
             className="flex-1 px-4 py-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white/50 dark:bg-dark-bg/50 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500"
           />
           <button

@@ -142,20 +142,32 @@ export const memberService = {
   },
 
   async delete(regNo: string): Promise<void> {
-    const { error } = await supabase
+    // 1. Delete all contributions for this member first to ensure complete deletion
+    // and bypass foreign key constraints if they aren't ON DELETE CASCADE
+    const { error: contributionError } = await supabase
+      .from('contributions')
+      .delete()
+      .eq('member_reg_no', regNo);
+
+    if (contributionError) throw contributionError;
+
+    // 2. Delete the member record
+    const { error: memberError } = await supabase
       .from('members')
       .delete()
       .ilike('reg_no', regNo);
 
-    if (error) throw error;
+    if (memberError) throw memberError;
 
+    // 3. Log the action
     const user = await userService.getCurrentUser();
     await logService.log({
       user_id: user?.id,
       user_name: user?.username,
       action: 'DELETE_MEMBER',
       entity_type: 'member',
-      entity_id: regNo
+      entity_id: regNo,
+      details: { note: 'Member and all contributions deleted completely' }
     });
   },
 };

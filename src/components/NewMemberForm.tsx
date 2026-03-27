@@ -164,7 +164,7 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
             value={formData.reg_no}
             onChange={(e) => setFormData({ ...formData, reg_no: e.target.value.toUpperCase() })}
             required
-            placeholder="e.g. 22FIS0543"
+            placeholder="e.g. 22ABC1234"
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white uppercase"
           />
           {fieldErrors.reg_no && <p className="mt-1 text-xs text-red-500">{fieldErrors.reg_no}</p>}

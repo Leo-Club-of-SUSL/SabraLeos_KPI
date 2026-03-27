@@ -34,7 +34,7 @@ export const bulkImportService = {
 
         const templateData = [
             {
-                reg_no: 'S/2021/001',
+                reg_no: '22ABC1234',
                 full_name: 'John Doe Smith',
                 name_with_initials: 'J.D. Smith',
                 batch: sampleBatch,
@@ -43,7 +43,7 @@ export const bulkImportService = {
                 my_lci_num: '12345678',
             },
             {
-                reg_no: 'S/2021/002',
+                reg_no: '22ABC1235',
                 full_name: 'Jane Mary Johnson',
                 name_with_initials: 'J.M. Johnson',
                 batch: sampleBatch,

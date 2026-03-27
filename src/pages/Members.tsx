@@ -160,10 +160,12 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
     }
   };
 
+
+
   const handleDeleteMember = async () => {
     if (!searchResult) return;
     
-    if (!window.confirm(`Are you sure you want to delete ${searchResult.full_name}? This action cannot be undone and will delete all their contribution history.`)) {
+    if (!window.confirm(`Are you sure you want to delete ${searchResult.full_name} COMPLETELY? This action cannot be undone and will delete ALL their contribution history (points).`)) {
       return;
     }
 
@@ -175,7 +177,7 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
       loadMembers();
     } catch (error) {
       console.error('Delete error:', error);
-      alert('Failed to delete member. They may have related records that prevent deletion or you may not have sufficient permissions.');
+      alert('Failed to delete member completely. You may not have sufficient permissions.');
     } finally {
       setLoading(false);
     }
@@ -231,7 +233,7 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Enter University Reg No (e.g., S/2021/001)"
+            placeholder="Enter University Reg No (e.g., 22ABC1234)"
             className="flex-1 px-4 py-3 border border-gray-300 dark:border-dark-border rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white/50 dark:bg-dark-bg/50 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-500"
           />
           <button
@@ -411,7 +413,7 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                       className="flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/30 rounded-xl font-medium transition-all duration-200"
                     >
                       <Trash2 className="w-5 h-5" />
-                      Delete Member
+                      Delete Member Completely
                     </button>
                   </div>
                 ) : (
