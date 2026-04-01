@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { contributionService } from '../services/contribution-service';
+import { systemService } from '../services/system-service';
 import { Loader2 } from 'lucide-react';
 import { sanitizeTextInput, validatePoints } from '../lib/sanitize';
-import type { Member } from '../types/database';
+import type { Member, Avenue } from '../types/database';
 
 interface AddContributionFormProps {
   member: Member;
@@ -21,17 +22,11 @@ export function AddContributionForm({ member, onSuccess, onCancel }: AddContribu
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [avenues, setAvenues] = useState<Avenue[]>([]);
 
-  const avenues = [
-    'Leadership Development',
-    'Environmental Sustainability',
-    'Hunger Relief',
-    'Vision Care',
-    'Childhood Cancer',
-    'Diabetes Awareness',
-    'Youth Camps',
-    'Community Service',
-  ];
+  useEffect(() => {
+    systemService.getAvenues().then(setAvenues);
+  }, []);
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
@@ -157,8 +152,8 @@ export function AddContributionForm({ member, onSuccess, onCancel }: AddContribu
         >
           <option value="">Select Avenue (Optional)</option>
           {avenues.map((avenue) => (
-            <option key={avenue} value={avenue}>
-              {avenue}
+            <option key={avenue.id} value={avenue.name}>
+              {avenue.name}
             </option>
           ))}
         </select>

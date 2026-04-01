@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { systemService } from '../services/system-service';
-import { Plus, Trash2, Edit2, Check, X, GraduationCap, Calendar } from 'lucide-react';
-import type { Faculty, Batch } from '../types/database';
+import { Plus, Trash2, Edit2, Check, X, GraduationCap, Calendar, FolderTree } from 'lucide-react';
+import type { Faculty, Batch, Avenue } from '../types/database';
 
 export function SystemDataManagement() {
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [avenues, setAvenues] = useState<Avenue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -18,15 +19,21 @@ export function SystemDataManagement() {
   const [editBatchName, setEditBatchName] = useState('');
   const [newBatchName, setNewBatchName] = useState('');
 
+  const [editingAvenueId, setEditingAvenueId] = useState<string | null>(null);
+  const [editAvenueName, setEditAvenueName] = useState('');
+  const [newAvenueName, setNewAvenueName] = useState('');
+
   const loadData = async () => {
     try {
       setLoading(true);
-      const [fData, bData] = await Promise.all([
+      const [fData, bData, aData] = await Promise.all([
         systemService.getFaculties(),
         systemService.getBatches(),
+        systemService.getAvenues(),
       ]);
       setFaculties(fData);
       setBatches(bData);
+      setAvenues(aData);
     } catch (err) {
       console.error('Error loading system data:', err);
       setError(`Failed to load system data: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -100,6 +107,38 @@ export function SystemDataManagement() {
       loadData();
     } catch (err) {
       alert('Failed to delete batch.');
+    }
+  };
+
+  const handleAddAvenue = async () => {
+    if (!newAvenueName.trim()) return;
+    try {
+      await systemService.createAvenue({ name: newAvenueName.trim() });
+      setNewAvenueName('');
+      loadData();
+    } catch (err) {
+      alert('Failed to add avenue. It might already exist.');
+    }
+  };
+
+  const handleUpdateAvenue = async (id: string) => {
+    if (!editAvenueName.trim()) return;
+    try {
+      await systemService.updateAvenue(id, { name: editAvenueName.trim() });
+      setEditingAvenueId(null);
+      loadData();
+    } catch (err) {
+      alert('Failed to update avenue.');
+    }
+  };
+
+  const handleDeleteAvenue = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete avenue "${name}"? Existing contributions with this avenue won't be affected, but you won't be able to select it for new projects.`)) return;
+    try {
+      await systemService.deleteAvenue(id);
+      loadData();
+    } catch (err) {
+      alert('Failed to delete avenue.');
     }
   };
 
@@ -259,6 +298,77 @@ export function SystemDataManagement() {
                         className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Avenues Section */}
+      <div className="glass-panel rounded-2xl overflow-hidden">
+        <div className="bg-gradient-to-r from-green-600 to-green-700 p-4 flex items-center gap-3">
+          <FolderTree className="w-6 h-6 text-white" />
+          <h3 className="text-xl font-bold text-white uppercase tracking-wider">Manage Avenues</h3>
+        </div>
+        
+        <div className="p-6 space-y-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newAvenueName}
+              onChange={(e) => setNewAvenueName(e.target.value)}
+              placeholder="e.g. Humanitarian Service"
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
+            />
+            <button
+              onClick={handleAddAvenue}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Add
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {avenues.map((avenue) => (
+              <div
+                key={avenue.id}
+                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10"
+              >
+                {editingAvenueId === avenue.id ? (
+                  <div className="flex-1 flex gap-2">
+                    <input
+                      type="text"
+                      value={editAvenueName}
+                      onChange={(e) => setEditAvenueName(e.target.value)}
+                      className="flex-1 px-2 py-1 border border-green-500 rounded bg-white dark:bg-dark-bg text-gray-900 dark:text-white"
+                      autoFocus
+                    />
+                    <button onClick={() => handleUpdateAvenue(avenue.id)} className="text-green-600"><Check className="w-5 h-5" /></button>
+                    <button onClick={() => setEditingAvenueId(null)} className="text-red-600"><X className="w-5 h-5" /></button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="font-medium text-gray-900 dark:text-white">{avenue.name}</span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setEditingAvenueId(avenue.id);
+                          setEditAvenueName(avenue.name);
+                        }}
+                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAvenue(avenue.id, avenue.name)}
+                        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </>

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { contributionService } from '../services/contribution-service';
 import { memberService } from '../services/member-service';
+import { systemService } from '../services/system-service';
 import { Loader2, Search, UserPlus, Trash2, Info } from 'lucide-react';
 import { sanitizeTextInput, validatePoints } from '../lib/sanitize';
-import type { Member } from '../types/database';
+import type { Member, Avenue } from '../types/database';
 
 interface BulkProjectContributionFormProps {
   onSuccess: () => void;
@@ -33,17 +34,11 @@ export function BulkProjectContributionForm({ onSuccess, onCancel }: BulkProject
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [avenues, setAvenues] = useState<Avenue[]>([]);
 
-  const avenues = [
-    'Leadership Development',
-    'Environmental Sustainability',
-    'Hunger Relief',
-    'Vision Care',
-    'Childhood Cancer',
-    'Diabetes Awareness',
-    'Youth Camps',
-    'Community Service',
-  ];
+  useEffect(() => {
+    systemService.getAvenues().then(setAvenues);
+  }, []);
 
   // Search members when query changes
   useEffect(() => {
@@ -196,7 +191,7 @@ export function BulkProjectContributionForm({ onSuccess, onCancel }: BulkProject
             >
               <option value="">Select Avenue (Optional)</option>
               {avenues.map((avenue) => (
-                <option key={avenue} value={avenue}>{avenue}</option>
+                <option key={avenue.id} value={avenue.name}>{avenue.name}</option>
               ))}
             </select>
           </div>

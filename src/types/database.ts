@@ -55,6 +55,12 @@ export interface Database {
         Update: BatchUpdate;
         Relationships: [];
       };
+      avenues: {
+        Row: Avenue;
+        Insert: AvenueInsert;
+        Update: AvenueUpdate;
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never
@@ -186,5 +192,19 @@ export interface BatchInsert {
 }
 
 export interface BatchUpdate {
+  name?: string;
+}
+
+export interface Avenue {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface AvenueInsert {
+  name: string;
+}
+
+export interface AvenueUpdate {
   name?: string;
 }
