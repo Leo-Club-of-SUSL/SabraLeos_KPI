@@ -26,6 +26,9 @@ SabraLeos is a production-ready Progressive Web App built for the Leo Club of Sa
 3. **User Management System**
    - Three role types: Super Admin, Editor, Viewer
    - Secure authentication
+   - **User Management**: Restricted access for Super Admin, Editor, and Viewer
+   - **System Settings**: Dynamic management of Faculties, Batches, and Avenues
+   - **Bulk Operations**: Large-scale addition of contributions by project name
    - User-to-member linking capability
    - Role-based access control
 

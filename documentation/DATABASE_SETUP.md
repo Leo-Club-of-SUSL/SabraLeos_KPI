@@ -58,6 +58,27 @@ CREATE TABLE IF NOT EXISTS app_users (
   created_at timestamptz DEFAULT now()
 );
 
+-- Create faculties table
+CREATE TABLE IF NOT EXISTS faculties (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text UNIQUE NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Create batches table
+CREATE TABLE IF NOT EXISTS batches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text UNIQUE NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Create avenues table
+CREATE TABLE IF NOT EXISTS avenues (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text UNIQUE NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_contributions_member ON contributions(member_reg_no);
 CREATE INDEX IF NOT EXISTS idx_contributions_date ON contributions(date_added);
@@ -69,6 +90,9 @@ CREATE INDEX IF NOT EXISTS idx_app_users_role ON app_users(role);
 ALTER TABLE members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contributions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE faculties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE avenues ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for members
 CREATE POLICY "Authenticated users can view all members"
@@ -100,6 +124,16 @@ CREATE POLICY "Editors and admins can update members"
       AND app_users.role IN ('super_admin', 'editor')
     )
   );
+
+-- RLS Policies for faculties/batches/avenues (simplified for guide)
+CREATE POLICY "Auth users can view setup data" ON faculties FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admins can manage faculties" ON faculties FOR ALL TO authenticated USING (true); -- Simplified
+
+CREATE POLICY "Auth users can view batches" ON batches FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admins can manage batches" ON batches FOR ALL TO authenticated USING (true);
+
+CREATE POLICY "Auth users can view avenues" ON avenues FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Admins can manage avenues" ON avenues FOR ALL TO authenticated USING (true);
 
 -- RLS Policies for contributions
 CREATE POLICY "Authenticated users can view all contributions"

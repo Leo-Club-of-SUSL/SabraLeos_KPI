@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS public.batches (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Avenues Table
+CREATE TABLE IF NOT EXISTS public.avenues (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- System Logs Table
 CREATE TABLE IF NOT EXISTS public.system_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -77,6 +84,7 @@ ALTER TABLE public.contributions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faculties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.avenues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to get the current user's role
@@ -110,6 +118,10 @@ CREATE POLICY "faculties_all" ON public.faculties FOR ALL TO authenticated USING
 -- Batches Policies
 CREATE POLICY "batches_select" ON public.batches FOR SELECT TO authenticated USING (true);
 CREATE POLICY "batches_all" ON public.batches FOR ALL TO authenticated USING (public.get_my_role() IN ('super_admin','editor')) WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
+
+-- Avenues Policies
+CREATE POLICY "avenues_select" ON public.avenues FOR SELECT TO authenticated USING (true);
+CREATE POLICY "avenues_all" ON public.avenues FOR ALL TO authenticated USING (public.get_my_role() IN ('super_admin','editor')) WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
 
 -- System Logs Policies
 CREATE POLICY "system_logs_select" ON public.system_logs FOR SELECT TO authenticated USING (public.get_my_role() IN ('super_admin', 'editor'));

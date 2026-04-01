@@ -37,6 +37,25 @@ Defines internal application user permissions and ties standard Auth users to in
 - `linked_member_reg_no` (Foreign Key, VARCHAR): Crucial element linking this software user to the physical club member record in `members`. Allows an active tracker to see "their own points" seamlessly.
 - `created_at` (TIMESTAMP)
 
+### 1.4 `faculties` Table
+Primary registry for university faculties.
+
+- `id` (Primary Key, UUID)
+- `name` (TEXT, Unique)
+
+### 1.5 `batches` Table
+Primary registry for academic batches.
+
+- `id` (Primary Key, UUID)
+- `name` (TEXT, Unique)
+
+### 1.6 `avenues` Table
+Primary registry for Leo service avenues. Used to populate contribution categories.
+
+- `id` (Primary Key, UUID)
+- `name` (TEXT, Unique)
+- `created_at` (TIMESTAMP)
+
 ## 2. Row Level Security (RLS)
 
 All tables employ **Row Level Security** to explicitly restrict access to authenticated queries based on their active identity payload. Let's detail the RLS configuration.
