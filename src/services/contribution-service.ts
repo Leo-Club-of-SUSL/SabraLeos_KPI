@@ -57,6 +57,41 @@ export const contributionService = {
     return data as unknown as Contribution;
   },
 
+  async createMany(contributions: ContributionInsert[]): Promise<Contribution[]> {
+    if (contributions.length === 0) return [];
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const authUser = await userService.getCurrentUser();
+
+    // Prepare data for insertion
+    const toInsert = contributions.map(c => ({
+      ...c,
+      added_by: user?.id || null,
+    }));
+
+    const { data, error } = await supabase
+      .from('contributions')
+      .insert(toInsert as any)
+      .select();
+
+    if (error) throw error;
+
+    // Log the bulk action
+    await logService.log({
+      user_id: authUser?.id,
+      user_name: authUser?.username,
+      action: 'BULK_CREATE_CONTRIBUTIONS',
+      entity_type: 'contribution',
+      details: { 
+        count: contributions.length, 
+        project: contributions[0].project_name,
+        members: contributions.map(c => c.member_reg_no)
+      }
+    });
+
+    return data as unknown as Contribution[];
+  },
+
   async getByDateRange(startDate: string, endDate: string): Promise<Contribution[]> {
     const { data, error } = await supabase
       .from('contributions')

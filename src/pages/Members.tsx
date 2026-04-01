@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
-import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download, Trash2 } from 'lucide-react';
+import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download, Trash2, Layers } from 'lucide-react';
 import type { Member, Contribution } from '../types/database';
 import { NewMemberForm } from '../components/NewMemberForm';
 import { EditMemberForm } from '../components/EditMemberForm';
 import { AddContributionForm } from '../components/AddContributionForm';
 import { BulkImportModal } from '../components/BulkImportModal';
+import { BulkProjectContributionForm } from '../components/BulkProjectContributionForm';
 import { usePermissions } from '../hooks/usePermissions';
 import { downloadImage } from '../lib/image-utils';
 
@@ -24,6 +25,7 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
   const [showEditMemberForm, setShowEditMemberForm] = useState(false);
   const [showAddContribution, setShowAddContribution] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showBulkProjectContribution, setShowBulkProjectContribution] = useState(false);
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const { canEdit } = usePermissions();
 
@@ -208,13 +210,26 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
             </p>
           </div>
           {canEdit && (
-            <button
-              onClick={() => setShowBulkImport(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
-            >
-              <FileDown className="w-5 h-5" />
-              Bulk Import
-            </button>
+            <div className="flex gap-3">
+              {canEdit && (
+                <button
+                  onClick={() => setShowBulkProjectContribution(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
+                >
+                  <Layers className="w-5 h-5" />
+                  Add Project Points
+                </button>
+              )}
+              {canEdit && (
+                <button
+                  onClick={() => setShowBulkImport(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
+                >
+                  <FileDown className="w-5 h-5" />
+                  Bulk Import
+                </button>
+              )}
+            </div>
           )}
         </div>
         {!canEdit && (
@@ -751,6 +766,33 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
           onClose={() => setShowBulkImport(false)}
           onSuccess={handleBulkImportSuccess}
         />
+      )}
+
+      {showBulkProjectContribution && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="glass-panel rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white/95 dark:bg-dark-surface/95 backdrop-blur border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Add Project Contributions (Bulk)
+              </h2>
+              <button
+                onClick={() => setShowBulkProjectContribution(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <BulkProjectContributionForm
+                onSuccess={() => {
+                  setShowBulkProjectContribution(false);
+                  loadMembers();
+                }}
+                onCancel={() => setShowBulkProjectContribution(false)}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
