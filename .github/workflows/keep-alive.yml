@@ -2,21 +2,51 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    - cron: '0 0 */3 * *'
+    - cron: '0 0 */2 * *'
   workflow_dispatch:
 
 jobs:
   ping:
+    name: Ping Supabase
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase
+      - name: Send API Request
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/members?select=reg_no&limit=1")
-          echo "Supabase responded with HTTP $STATUS at $(date)"
-          if [ "$STATUS" != "200" ]; then
-            echo "ERROR: Unexpected status $STATUS"
+          URL="${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}"
+          KEY="${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}"
+          
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "ERROR: SUPABASE_URL or SUPABASE_ANON_KEY secret is not set in GitHub Settings > Secrets > Actions"
+            echo "Please ensure you have configured your Supabase credentials in your GitHub repository."
             exit 1
           fi
+          
+          # Remove trailing slash
+          URL="${URL%/}"
+          
+          echo "Connecting to: $URL"
+          
+          # Attempt 1: PostgREST root
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY" \
+            "$URL/rest/v1/")
+          
+          echo "PostgREST Check: HTTP $STATUS"
+          
+          # Attempt 2: Auth Health Check if Attempt 1 failed
+          if [ "$STATUS" != "200" ]; then
+             echo "Retrying via Auth Health Check..."
+             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+               -H "apikey: $KEY" \
+               "$URL/auth/v1/health")
+             echo "Auth Health Check: HTTP $STATUS"
+          fi
+          
+          if [ "$STATUS" == "200" ]; then
+            echo "SUCCESS: Supabase project is awake."
+          else
+            echo "FAILURE: Could not reach Supabase. HTTP status $STATUS (Ensure your URL and Key are correct)"
+            exit 1
+          fi
+
