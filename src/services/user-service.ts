@@ -1,6 +1,36 @@
 import { supabase } from '../lib/supabase';
-import type { PostgrestError } from '@supabase/supabase-js';
-import type { AppUser, AppUserInsert } from '../types/database';
+import type { AppUser } from '../types/database';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+
+/**
+ * Calls an Edge Function with the current user's JWT.
+ */
+async function callEdgeFunction(
+  functionName: string,
+  body: Record<string, unknown>,
+): Promise<{ data: unknown; error: string | null }> {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+  if (!token) {
+    return { data: null, error: 'Not authenticated' };
+  }
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const json = await res.json();
+  if (!res.ok) {
+    return { data: null, error: (json as { error?: string }).error ?? 'Request failed' };
+  }
+  return { data: json, error: null };
+}
 
 export const userService = {
   async getCurrentUser(): Promise<AppUser | null> {
@@ -14,7 +44,7 @@ export const userService = {
       .maybeSingle();
 
     if (error) throw error;
-    return data;
+    return data as AppUser | null;
   },
 
   async getAll(): Promise<AppUser[]> {
@@ -24,92 +54,92 @@ export const userService = {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data as AppUser[]) || [];
   },
 
-  async create(email: string, password: string, userData: Omit<AppUserInsert, 'id'>): Promise<AppUser> {
-    // Defense-in-depth: verify caller is an admin before proceeding
+  /**
+   * Create a new user account via Edge Function (server-side, uses service role key).
+   * Sends an invite email; the user sets their password via the invite link.
+   */
+  async create(
+    email: string,
+    userData: {
+      username: string;
+      designation: string;
+      role: 'super_admin' | 'editor' | 'viewer' | 'member';
+      linked_member_reg_no?: string | null;
+      password?: string;
+    },
+  ): Promise<AppUser> {
+    // Client-side role check (UX only — real check is server-side in the Edge Function)
     const currentUser = await this.getCurrentUser();
     if (!currentUser || currentUser.role !== 'super_admin') {
       throw new Error('Unauthorized: Only Super Admins can create users.');
     }
 
-    const { createClient } = await import('@supabase/supabase-js');
-    const tempClient = createClient(
-      import.meta.env.VITE_SUPABASE_URL,
-      import.meta.env.VITE_SUPABASE_ANON_KEY,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-          detectSessionInUrl: false,
-        },
-      }
-    );
-
-    const { data: authData, error: authError } = await tempClient.auth.signUp({
+    const { data, error } = await callEdgeFunction('admin-create-user', {
       email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/login`,
-        data: {
-          created_by_admin: true,
-        },
-      },
+      password: userData.password,
+      username: userData.username,
+      designation: userData.designation,
+      role: userData.role,
+      linked_member_reg_no: userData.linked_member_reg_no ?? null,
     });
 
-    if (authError) throw authError;
-    if (!authData.user) throw new Error('User creation failed');
-
-
-
-    // Insert the profile using the ADMIN's credentials (main supabase client)
-    const { data, error } = await supabase
-      .from('app_users')
-      .insert({
-        id: authData.user.id,
-        ...userData,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return data;
+    if (error) throw new Error(error);
+    return (data as { user: AppUser }).user;
   },
 
-  async update(id: string, updates: Partial<Omit<AppUser, 'id' | 'created_at'>>): Promise<AppUser> {
+  /**
+   * Update a user's non-privileged fields (username, designation, linked_member_reg_no).
+   * Role changes go through super_admin direct update (RLS enforced).
+   * NOTE: role, status changes require super_admin — enforced by DB trigger.
+   */
+  async update(
+    id: string,
+    updates: Partial<Pick<AppUser, 'username' | 'designation' | 'role' | 'linked_member_reg_no'>>,
+  ): Promise<AppUser> {
     const { data, error } = await supabase
       .from('app_users')
-      // @ts-expect-error: Suppress type mismatch
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update(updates as any)
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    return data as AppUser;
   },
 
+  /**
+   * Send a password reset email.
+   */
   async resetPassword(email: string): Promise<void> {
+    // Use a generic redirect — don't expose account existence in error messages
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    if (error) throw error;
+    // Do not throw on error — prevents account enumeration
+    if (error) console.warn('Password reset request processed (details suppressed).');
   },
 
-  async delete(id: string): Promise<{ error: PostgrestError | null }> {
-    // NOTE: This only deletes the app_users row.
-    // The auth.users row persists (requires service role key to delete).
-    // See USER_DELETION_GUIDE.md for manual cleanup instructions.
+  /**
+   * Delete a user account via Edge Function.
+   * Deletes from auth.users (cascades to app_users). Refuses last super_admin.
+   */
+  async delete(userId: string): Promise<void> {
+    const { error } = await callEdgeFunction('admin-delete-user', { user_id: userId });
+    if (error) throw new Error(error);
+  },
 
-    const { error } = await supabase
-      .from('app_users')
-      .delete()
-      .eq('id', id);
-
-    return { error };
+  /**
+   * Suspend or reactivate a user via Edge Function.
+   * Bans in Auth + updates app_users.status.
+   */
+  async setStatus(userId: string, action: 'suspend' | 'reactivate'): Promise<void> {
+    const { error } = await callEdgeFunction('admin-set-user-status', {
+      user_id: userId,
+      action,
+    });
+    if (error) throw new Error(error);
   },
 };

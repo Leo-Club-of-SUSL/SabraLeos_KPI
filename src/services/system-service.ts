@@ -5,40 +5,40 @@ export const systemService = {
   // Faculties
   async getFaculties(): Promise<Faculty[]> {
     const { data, error } = await supabase
-      .from('faculties' as any)
+      .from('faculties')
       .select('*')
       .order('name', { ascending: true });
 
     if (error) throw error;
-    return data || [];
+    return (data as Faculty[]) || [];
   },
 
   async createFaculty(faculty: FacultyInsert): Promise<Faculty> {
     const { data, error } = await supabase
-      .from('faculties' as any)
-      .insert(faculty as any)
+      .from('faculties')
+      .insert(faculty)
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    return data as Faculty;
   },
 
   async updateFaculty(id: string, updates: FacultyUpdate): Promise<Faculty> {
     const { data, error } = await supabase
-      .from('faculties' as any)
-      .update(updates as any)
+      .from('faculties')
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    return data as Faculty;
   },
 
   async deleteFaculty(id: string): Promise<void> {
     const { error } = await supabase
-      .from('faculties' as any)
+      .from('faculties')
       .delete()
       .eq('id', id);
 
@@ -48,40 +48,40 @@ export const systemService = {
   // Batches
   async getBatches(): Promise<Batch[]> {
     const { data, error } = await supabase
-      .from('batches' as any)
+      .from('batches')
       .select('*')
       .order('name', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data as Batch[]) || [];
   },
 
   async createBatch(batch: BatchInsert): Promise<Batch> {
     const { data, error } = await supabase
-      .from('batches' as any)
-      .insert(batch as any)
+      .from('batches')
+      .insert(batch)
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    return data as Batch;
   },
 
   async updateBatch(id: string, updates: BatchUpdate): Promise<Batch> {
     const { data, error } = await supabase
-      .from('batches' as any)
-      .update(updates as any)
+      .from('batches')
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    return data as Batch;
   },
 
   async deleteBatch(id: string): Promise<void> {
     const { error } = await supabase
-      .from('batches' as any)
+      .from('batches')
       .delete()
       .eq('id', id);
 
@@ -91,35 +91,35 @@ export const systemService = {
   // Avenues
   async getAvenues(): Promise<Avenue[]> {
     const { data, error } = await supabase
-      .from('avenues' as any)
+      .from('avenues')
       .select('*')
       .order('name', { ascending: true });
 
     if (error) throw error;
-    return data || [];
+    return (data as Avenue[]) || [];
   },
 
   async createAvenue(avenue: AvenueInsert): Promise<Avenue> {
     const { data, error } = await supabase
-      .from('avenues' as any)
-      .insert(avenue as any)
+      .from('avenues')
+      .insert(avenue)
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    return data as Avenue;
   },
 
   async updateAvenue(id: string, updates: AvenueUpdate): Promise<Avenue> {
     const { data, error } = await supabase
-      .from('avenues' as any)
-      .update(updates as any)
+      .from('avenues')
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    return data as Avenue;
   },
 
   async deleteAvenue(id: string): Promise<void> {

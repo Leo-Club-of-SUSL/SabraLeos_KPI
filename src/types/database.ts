@@ -4,9 +4,13 @@ export type Json =
   | boolean
   | null
   | { [key: string]: Json | undefined }
-  | Json[]
+  | Json[];
 
-export interface Database {
+export type AppUserRole = 'super_admin' | 'editor' | 'viewer' | 'member';
+export type AppUserStatus = 'active' | 'suspended';
+export type MemberStatus = 'active' | 'alumni';
+
+export type Database = {
   public: {
     Tables: {
       members: {
@@ -21,11 +25,11 @@ export interface Database {
         Update: ContributionUpdate;
         Relationships: [
           {
-            foreignKeyName: "contributions_member_reg_no_fkey";
-            columns: ["member_reg_no"];
+            foreignKeyName: 'contributions_member_reg_no_fkey';
+            columns: ['member_reg_no'];
             isOneToOne: false;
-            referencedRelation: "members";
-            referencedColumns: ["reg_no"];
+            referencedRelation: 'members';
+            referencedColumns: ['reg_no'];
           }
         ];
       };
@@ -35,11 +39,11 @@ export interface Database {
         Update: AppUserUpdate;
         Relationships: [
           {
-            foreignKeyName: "app_users_linked_member_reg_no_fkey";
-            columns: ["linked_member_reg_no"];
+            foreignKeyName: 'app_users_linked_member_reg_no_fkey';
+            columns: ['linked_member_reg_no'];
             isOneToOne: false;
-            referencedRelation: "members";
-            referencedColumns: ["reg_no"];
+            referencedRelation: 'members';
+            referencedColumns: ['reg_no'];
           }
         ];
       };
@@ -61,23 +65,59 @@ export interface Database {
         Update: AvenueUpdate;
         Relationships: [];
       };
+      system_logs: {
+        Row: SystemLog;
+        Insert: SystemLogInsert;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: {
-      [_ in never]: never
+      [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never
+      get_my_role: {
+        Args: Record<never, never>;
+        Returns: string | null;
+      };
+      is_officer: {
+        Args: Record<never, never>;
+        Returns: boolean;
+      };
+      is_editor_or_above: {
+        Args: Record<never, never>;
+        Returns: boolean;
+      };
+      is_super_admin: {
+        Args: Record<never, never>;
+        Returns: boolean;
+      };
+      my_member_reg_no: {
+        Args: Record<never, never>;
+        Returns: string | null;
+      };
+      log_login: {
+        Args: Record<never, never>;
+        Returns: void;
+      };
+      log_export: {
+        Args: { p_details: Json };
+        Returns: void;
+      };
     };
     Enums: {
-      [_ in never]: never
+      [_ in never]: never;
     };
     CompositeTypes: {
-      [_ in never]: never
+      [_ in never]: never;
     };
   };
-}
+};
 
-export interface Member {
+// ============================================================
+// Members
+// ============================================================
+export type Member = {
   reg_no: string;
   photo_url: string | null;
   full_name: string;
@@ -87,11 +127,17 @@ export interface Member {
   faculty: string;
   whatsapp: string;
   total_points: number;
+  // Phase 1 additions
+  deleted_at: string | null;
+  email: string | null;
+  leaderboard_opt_out: boolean;
+  display_alias: string | null;
+  member_status: MemberStatus;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface MemberInsert {
+export type MemberInsert = {
   reg_no: string;
   photo_url?: string | null;
   full_name: string;
@@ -100,10 +146,14 @@ export interface MemberInsert {
   batch: string;
   faculty: string;
   whatsapp: string;
+  email?: string | null;
+  leaderboard_opt_out?: boolean;
+  display_alias?: string | null;
+  member_status?: MemberStatus;
   total_points?: number;
-}
+};
 
-export interface MemberUpdate {
+export type MemberUpdate = {
   photo_url?: string | null;
   full_name?: string;
   name_with_initials?: string;
@@ -111,9 +161,17 @@ export interface MemberUpdate {
   batch?: string;
   faculty?: string;
   whatsapp?: string;
-}
+  email?: string | null;
+  leaderboard_opt_out?: boolean;
+  display_alias?: string | null;
+  member_status?: MemberStatus;
+  deleted_at?: string | null;
+};
 
-export interface Contribution {
+// ============================================================
+// Contributions
+// ============================================================
+export type Contribution = {
   id: string;
   member_reg_no: string;
   project_name: string;
@@ -123,9 +181,9 @@ export interface Contribution {
   avenue: string | null;
   date_added: string;
   added_by: string | null;
-}
+};
 
-export interface ContributionInsert {
+export type ContributionInsert = {
   member_reg_no: string;
   project_name: string;
   time_period: string;
@@ -133,78 +191,110 @@ export interface ContributionInsert {
   points: number;
   avenue?: string | null;
   added_by?: string | null;
-}
+};
 
-export interface ContributionUpdate {
+export type ContributionUpdate = {
   project_name?: string;
   time_period?: string;
   position?: string;
   points?: number;
   avenue?: string | null;
-}
+};
 
-export interface AppUser {
+// ============================================================
+// App Users
+// ============================================================
+export type AppUser = {
   id: string;
   username: string;
   designation: string;
-  role: 'super_admin' | 'editor' | 'viewer';
+  role: AppUserRole;
+  status: AppUserStatus;
   linked_member_reg_no: string | null;
   created_at: string;
-}
+};
 
-export interface AppUserInsert {
+export type AppUserInsert = {
   id: string;
   username: string;
   designation: string;
-  role: 'super_admin' | 'editor' | 'viewer';
+  role: AppUserRole;
+  status?: AppUserStatus;
   linked_member_reg_no?: string | null;
-}
+};
 
-export interface AppUserUpdate {
+export type AppUserUpdate = {
   username?: string;
   designation?: string;
-  role?: 'super_admin' | 'editor' | 'viewer';
+  role?: AppUserRole;
+  status?: AppUserStatus;
   linked_member_reg_no?: string | null;
-}
+};
 
-export interface Faculty {
+// ============================================================
+// Taxonomy: Faculties, Batches, Avenues
+// ============================================================
+export type Faculty = {
   id: string;
   name: string;
   created_at: string;
-}
+};
 
-export interface FacultyInsert {
+export type FacultyInsert = {
   name: string;
-}
+};
 
-export interface FacultyUpdate {
+export type FacultyUpdate = {
   name?: string;
-}
+};
 
-export interface Batch {
+export type Batch = {
   id: string;
   name: string;
   created_at: string;
-}
+};
 
-export interface BatchInsert {
+export type BatchInsert = {
   name: string;
-}
+};
 
-export interface BatchUpdate {
+export type BatchUpdate = {
   name?: string;
-}
+};
 
-export interface Avenue {
+export type Avenue = {
   id: string;
   name: string;
   created_at: string;
-}
+};
 
-export interface AvenueInsert {
+export type AvenueInsert = {
   name: string;
-}
+};
 
-export interface AvenueUpdate {
+export type AvenueUpdate = {
   name?: string;
-}
+};
+
+// ============================================================
+// System Logs
+// ============================================================
+export type SystemLog = {
+  id: string;
+  timestamp: string;
+  user_id: string | null;
+  user_name: string | null;
+  action: string;
+  details: Json | null;
+  entity_type: string | null;
+  entity_id: string | null;
+};
+
+export type SystemLogInsert = {
+  user_id?: string | null;
+  user_name?: string | null;
+  action: string;
+  details?: Json | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+};

@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase';
+import { db } from '../lib/supabase-helpers';
 import { validatePoints } from '../lib/sanitize';
-import { logService } from './log-service';
-import { userService } from './user-service';
 import type { Contribution, ContributionInsert } from '../types/database';
 
 export const contributionService = {
@@ -12,7 +11,7 @@ export const contributionService = {
       .order('date_added', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data as Contribution[]) || [];
   },
 
   async getByMember(memberRegNo: string): Promise<Contribution[]> {
@@ -23,7 +22,7 @@ export const contributionService = {
       .order('date_added', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data as Contribution[]) || [];
   },
 
   async create(contribution: ContributionInsert): Promise<Contribution> {
@@ -32,64 +31,36 @@ export const contributionService = {
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('contributions')
       .insert({
         ...contribution,
-        added_by: user?.id || null,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any)
+        added_by: user?.id ?? null,
+      })
       .select()
       .single();
 
     if (error) throw error;
-
-    const authUser = await userService.getCurrentUser();
-    await logService.log({
-      user_id: authUser?.id,
-      user_name: authUser?.username,
-      action: 'CREATE_CONTRIBUTION',
-      entity_type: 'contribution',
-      entity_id: (data as any).id,
-      details: { member: contribution.member_reg_no, points: contribution.points }
-    });
-
-    return data as unknown as Contribution;
+    return data as Contribution;
   },
 
   async createMany(contributions: ContributionInsert[]): Promise<Contribution[]> {
     if (contributions.length === 0) return [];
 
     const { data: { user } } = await supabase.auth.getUser();
-    const authUser = await userService.getCurrentUser();
 
-    // Prepare data for insertion
-    const toInsert = contributions.map(c => ({
+    const toInsert = contributions.map((c) => ({
       ...c,
-      added_by: user?.id || null,
+      added_by: user?.id ?? null,
     }));
 
-    const { data, error } = await supabase
+    const { data, error } = await db()
       .from('contributions')
-      .insert(toInsert as any)
+      .insert(toInsert)
       .select();
 
     if (error) throw error;
-
-    // Log the bulk action
-    await logService.log({
-      user_id: authUser?.id,
-      user_name: authUser?.username,
-      action: 'BULK_CREATE_CONTRIBUTIONS',
-      entity_type: 'contribution',
-      details: { 
-        count: contributions.length, 
-        project: contributions[0].project_name,
-        members: contributions.map(c => c.member_reg_no)
-      }
-    });
-
-    return data as unknown as Contribution[];
+    return (data as Contribution[]) || [];
   },
 
   async getByDateRange(startDate: string, endDate: string): Promise<Contribution[]> {
@@ -101,7 +72,7 @@ export const contributionService = {
       .order('date_added', { ascending: false });
 
     if (error) throw error;
-    return (data as unknown as Contribution[]) || [];
+    return (data as Contribution[]) || [];
   },
 
   async getMonthlyStats(year: number, month: number): Promise<number> {
@@ -124,8 +95,7 @@ export const contributionService = {
       .select('points');
 
     if (error) throw error;
-    // Cast data to ensure TS knows it has 'points'
-    const contributions = (data as unknown as { points: number }[]) || [];
+    const contributions = (data as { points: number }[]) || [];
     return contributions.reduce((sum, c) => sum + c.points, 0);
   },
 
@@ -136,19 +106,9 @@ export const contributionService = {
       .eq('id', id);
 
     if (error) throw error;
-
-    const authUser = await userService.getCurrentUser();
-    await logService.log({
-      user_id: authUser?.id,
-      user_name: authUser?.username,
-      action: 'DELETE_CONTRIBUTION',
-      entity_type: 'contribution',
-      entity_id: id
-    });
   },
 
   async getMonthlyLeaderboard(year: number, month: number): Promise<{ reg_no: string; monthly_points: number }[]> {
-    // Format: YYYY-MM (e.g., 2024-02 for February)
     const monthStr = month.toString().padStart(2, '0');
     const timePeriod = `${year}-${monthStr}`;
 
@@ -159,9 +119,8 @@ export const contributionService = {
 
     if (error) throw error;
 
-    // Aggregate points by member
     const aggregations: Record<string, number> = {};
-    const contributions = (data as unknown as { member_reg_no: string; points: number }[]) || [];
+    const contributions = (data as { member_reg_no: string; points: number }[]) || [];
 
     contributions.forEach((c) => {
       aggregations[c.member_reg_no] = (aggregations[c.member_reg_no] || 0) + c.points;
@@ -172,4 +131,3 @@ export const contributionService = {
       .sort((a, b) => b.monthly_points - a.monthly_points);
   },
 };
-

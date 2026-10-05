@@ -51,8 +51,7 @@ export function UserManagement() {
     }
 
     try {
-      const { error } = await userService.delete(userId);
-      if (error) throw error;
+      await userService.delete(userId);
       loadData();
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -409,7 +408,8 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
         });
         setSuccessMessage('User updated successfully!');
       } else {
-        await userService.create(formData.email, formData.password, {
+        await userService.create(formData.email, {
+          password: formData.password,
           username: formData.username,
           designation: formData.designation,
           role: formData.role,

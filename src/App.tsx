@@ -9,7 +9,7 @@ import { Members } from './pages/Members';
 import { Reports } from './pages/Reports';
 import { UserManagement } from './pages/UserManagement';
 import { AccountNotFound } from './components/AccountNotFound';
-import { initializeDatabase, seedMockData } from './lib/db-init';
+import { initializeDatabase } from './lib/db-init';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {

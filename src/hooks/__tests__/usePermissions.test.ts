@@ -21,6 +21,7 @@ function setRole(role: 'super_admin' | 'editor' | 'viewer' | null) {
                 username: 'Test',
                 designation: 'Test',
                 role,
+                status: 'active',
                 linked_member_reg_no: null,
                 created_at: new Date().toISOString(),
             }

@@ -2,8 +2,18 @@ import { useState, useEffect } from 'react';
 import { logService } from '../services/log-service';
 import { Clock, User, Info, FileText, Search, Loader2 } from 'lucide-react';
 
+interface SystemLogEntry {
+  id: string;
+  timestamp: string;
+  user_name: string | null;
+  action: string;
+  details: Record<string, unknown> | null;
+  entity_type: string | null;
+  entity_id: string | null;
+}
+
 export function SystemLogs() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<SystemLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
@@ -12,7 +22,7 @@ export function SystemLogs() {
     try {
       setLoading(true);
       const data = await logService.getLogs();
-      setLogs(data);
+      setLogs(data as SystemLogEntry[]);
     } catch (err) {
       console.error('Error loading logs:', err);
       setError('Failed to load system logs');

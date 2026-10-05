@@ -52,7 +52,7 @@ export function SystemDataManagement() {
       await systemService.createFaculty({ name: newFacultyName.trim() });
       setNewFacultyName('');
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to add faculty. It might already exist.');
     }
   };
@@ -63,7 +63,7 @@ export function SystemDataManagement() {
       await systemService.updateFaculty(id, { name: editFacultyName.trim() });
       setEditingFacultyId(null);
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to update faculty.');
     }
   };
@@ -73,7 +73,7 @@ export function SystemDataManagement() {
     try {
       await systemService.deleteFaculty(id);
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to delete faculty.');
     }
   };
@@ -84,7 +84,7 @@ export function SystemDataManagement() {
       await systemService.createBatch({ name: newBatchName.trim() });
       setNewBatchName('');
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to add batch. It might already exist.');
     }
   };
@@ -95,7 +95,7 @@ export function SystemDataManagement() {
       await systemService.updateBatch(id, { name: editBatchName.trim() });
       setEditingBatchId(null);
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to update batch.');
     }
   };
@@ -105,7 +105,7 @@ export function SystemDataManagement() {
     try {
       await systemService.deleteBatch(id);
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to delete batch.');
     }
   };
@@ -116,7 +116,7 @@ export function SystemDataManagement() {
       await systemService.createAvenue({ name: newAvenueName.trim() });
       setNewAvenueName('');
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to add avenue. It might already exist.');
     }
   };
@@ -127,7 +127,7 @@ export function SystemDataManagement() {
       await systemService.updateAvenue(id, { name: editAvenueName.trim() });
       setEditingAvenueId(null);
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to update avenue.');
     }
   };
@@ -137,7 +137,7 @@ export function SystemDataManagement() {
     try {
       await systemService.deleteAvenue(id);
       loadData();
-    } catch (err) {
+    } catch {
       alert('Failed to delete avenue.');
     }
   };

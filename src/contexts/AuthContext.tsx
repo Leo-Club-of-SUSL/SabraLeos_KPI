@@ -5,7 +5,12 @@ import { userService } from '../services/user-service';
 import { logService } from '../services/log-service';
 import type { User } from '@supabase/supabase-js';
 
-const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+// Officers: 15-minute idle timeout. Members: 30-minute idle timeout.
+// The timeout is per-role, resolved after profile loads.
+const OFFICER_TIMEOUT_MS = 15 * 60 * 1000;
+const MEMBER_TIMEOUT_MS  = 30 * 60 * 1000;
+
+const OFFICER_ROLES = new Set(['viewer', 'editor', 'super_admin']);
 
 interface AuthContextType {
   user: User | null;
@@ -23,12 +28,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // One-time migration: Clear old persistent localStorage sessions
-  // to enforce the new sessionStorage-only policy immediately.
+  // One-time migration: clear old persistent localStorage sessions
   useEffect(() => {
     try {
       const keys = Object.keys(localStorage);
-      keys.forEach(key => {
+      keys.forEach((key) => {
         if (key.startsWith('sb-') || key.includes('supabase')) {
           localStorage.removeItem(key);
         }
@@ -38,7 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadUser = async () => {
+  const signOut = useCallback(async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    setUser(null);
+    setAppUser(null);
+  }, []);
+
+  const loadUser = useCallback(async () => {
     setLoading(true);
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -47,6 +58,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (authUser) {
         try {
           const userData = await userService.getCurrentUser();
+
+          // If the profile is missing or suspended, sign out immediately
+          if (!userData || (userData as AppUser & { status?: string }).status === 'suspended') {
+            await supabase.auth.signOut();
+            setUser(null);
+            setAppUser(null);
+            return;
+          }
+
           setAppUser(userData);
         } catch (err) {
           console.error('Error loading app user details:', err);
@@ -62,68 +82,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      (async () => {
-        await loadUser();
-      })();
+      void loadUser();
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadUser]);
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      throw error;
-    }
-
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (authUser) {
-      const userData = await userService.getCurrentUser();
-      await logService.log({
-        user_id: authUser.id,
-        user_name: userData?.username || authUser.email,
-        action: 'LOGIN',
-        details: { method: 'password' }
-      });
-    }
-
-    await loadUser();
-  };
-
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
+  const signIn = async (email: string, password: string): Promise<void> => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    setUser(null);
-    setAppUser(null);
-  };
 
-  const refreshUser = async () => {
     await loadUser();
+
+    // Log officer login server-side (RPC; no-op for member role)
+    try {
+      await logService.logLogin();
+    } catch {
+      // Non-fatal — don't block login on log failure
+    }
   };
 
-  // --- Session idle timeout ---
+  const refreshUser = useCallback(async () => {
+    await loadUser();
+  }, [loadUser]);
+
+  // --- Session idle timeout — per role ---
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (user) {
+      const role = appUser?.role ?? '';
+      const timeout = OFFICER_ROLES.has(role) ? OFFICER_TIMEOUT_MS : MEMBER_TIMEOUT_MS;
       idleTimerRef.current = setTimeout(() => {
-        signOut();
-      }, SESSION_TIMEOUT_MS);
+        void signOut();
+      }, timeout);
     }
-  }, [user]);
+  }, [user, appUser?.role, signOut]);
 
   useEffect(() => {
     if (!user) return;

@@ -16,7 +16,7 @@ export async function initializeDatabase() {
         return false;
       }
       // 401: Unauthorized (RLS active, which means table exists but we aren't logged in)
-      if (tablesError.code === '401' || (tablesError as any).status === 401) {
+      if (tablesError.code === '401' || ('status' in tablesError && (tablesError as { status?: number }).status === 401)) {
         console.info('Database initialized and secured with RLS.');
         return true;
       }
@@ -80,7 +80,6 @@ export async function seedMockData() {
 
     const { error: membersError } = await supabase
       .from('members')
-      // @ts-expect-error: Suppress type mismatch for mock data
       .insert(mockMembers);
 
     if (membersError) {
@@ -100,7 +99,7 @@ export async function seedMockData() {
         { name: 'Faculty of Computing' },
         { name: 'Faculty of Technology' },
       ];
-      await supabase.from('faculties').insert(initialFaculties as any);
+      await supabase.from('faculties').insert(initialFaculties);
     }
 
     // Seed Batches
@@ -113,7 +112,7 @@ export async function seedMockData() {
         { name: '2022/2023' },
         { name: '2023/2024' },
       ];
-      await supabase.from('batches').insert(initialBatches as any);
+      await supabase.from('batches').insert(initialBatches);
     }
   } catch (error) {
     console.error('Seeding error:', error);
