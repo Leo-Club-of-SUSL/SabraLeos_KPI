@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { systemService } from '../services/system-service';
 import { userService } from '../services/user-service';
-import { Camera, Loader2, EyeOff, KeyRound, RefreshCw, Eye } from 'lucide-react';
-import { validatePhotoFile, validateRegNo, validatePhoneNumber, sanitizeTextInput, validatePassword } from '../lib/sanitize';
+import { Camera, Loader2, EyeOff, MailCheck } from 'lucide-react';
+import { validatePhotoFile, validateRegNo, validatePhoneNumber, sanitizeTextInput } from '../lib/sanitize';
 import type { Member, Faculty, Batch as BatchType, MemberStatus } from '../types/database';
 
 interface NewMemberFormProps {
@@ -27,9 +27,7 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     display_alias: '',
   });
 
-  const [createAccount, setCreateAccount] = useState(true);
-  const [accountPassword, setAccountPassword] = useState('Leo@2024#');
-  const [showAccountPassword, setShowAccountPassword] = useState(false);
+  const [inviteAccount, setInviteAccount] = useState(true);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [photoError, setPhotoError] = useState('');
@@ -85,14 +83,8 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     if (!formData.batch) errors.batch = 'Batch selection is required';
     if (!formData.faculty) errors.faculty = 'Faculty selection is required';
     if (!validatePhoneNumber(formData.whatsapp)) errors.whatsapp = 'Invalid phone number format';
-    if (createAccount) {
-      if (!formData.email) {
-        errors.email = 'Email address is required to create a member portal login account';
-      }
-      const pwdValidation = validatePassword(accountPassword);
-      if (!pwdValidation.isValid) {
-        errors.password = 'Password: ' + pwdValidation.errors.join(', ');
-      }
+    if (inviteAccount && !formData.email) {
+      errors.email = 'Email address is required to invite member to portal';
     }
     
     setFieldErrors(errors);
@@ -131,19 +123,17 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
         photo_url: photoUrl,
       });
 
-      // Create portal login account if requested
-      if (formData.email && createAccount && accountPassword) {
+      // Send portal invite if requested
+      if (formData.email && inviteAccount) {
         try {
-          await userService.create(formData.email, {
-            username: formData.name_with_initials,
-            designation: 'Member',
-            role: 'member',
-            linked_member_reg_no: member.reg_no,
-            password: accountPassword,
-          });
+          const results = await userService.provisionMembers([member.reg_no]);
+          const res = results[0];
+          if (res?.status === 'failed') {
+            alert(`Member created, but invite could not be sent: ${res.message || 'Service unavailable'}`);
+          }
         } catch (accountErr) {
-          console.warn('Member created successfully, but portal login account creation encountered an issue:', accountErr);
-          alert(`Member was registered successfully, but login account creation note: ${accountErr instanceof Error ? accountErr.message : 'Check user management'}`);
+          console.warn('Member created, invite error:', accountErr);
+          alert(`Member created, but invitation email could not be sent: ${accountErr instanceof Error ? accountErr.message : 'Account service unavailable'}`);
         }
       }
 
@@ -337,83 +327,31 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
         <div className="md:col-span-2 p-5 rounded-xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <KeyRound className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
+              <MailCheck className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
               <div>
                 <span className="font-bold text-gray-900 dark:text-white text-sm">
-                  Create Member Portal Login Account
+                  Send Portal Invitation Email
                 </span>
                 <p className="text-xs text-gray-600 dark:text-gray-400">
-                  Allows this member to log into their member portal with their email and an assigned password
+                  Sends a secure, time-limited invite link to the member to set their own password
                 </p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={createAccount}
-                onChange={(e) => setCreateAccount(e.target.checked)}
+                checked={inviteAccount}
+                onChange={(e) => setInviteAccount(e.target.checked)}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-maroon-600"></div>
             </label>
           </div>
 
-          {createAccount && (
-            <div className="pt-2 border-t border-maroon-200/60 dark:border-maroon-800/60 space-y-3">
-              {!formData.email && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                  <span>ℹ️ Please enter the member's <strong>Email Address</strong> above to associate this portal account.</span>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                    Assigned Initial Password <span className="text-red-500">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cleanReg = (formData.reg_no || 'Leo').replace(/[^a-zA-Z0-9]/g, '');
-                      setAccountPassword(`Leo@${cleanReg}#${Math.floor(10 + Math.random() * 90)}`);
-                    }}
-                    className="text-xs text-maroon-600 dark:text-neon-blue font-semibold hover:underline flex items-center gap-1"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Generate Password
-                  </button>
-                </div>
-
-                <div className="relative">
-                  <input
-                    type={showAccountPassword ? 'text' : 'password'}
-                    value={accountPassword}
-                    onChange={(e) => setAccountPassword(e.target.value)}
-                    required={createAccount}
-                    minLength={8}
-                    placeholder="Min 8 chars, uppercase, number, special"
-                    className="w-full px-3.5 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAccountPassword(!showAccountPassword)}
-                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                  >
-                    {showAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                {fieldErrors.password && (
-                  <p className="text-xs text-red-500">{fieldErrors.password}</p>
-                )}
-
-                {accountPassword && (() => {
-                  const v = validatePassword(accountPassword);
-                  return (
-                    <p className={`text-[11px] ${v.isValid ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-500'}`}>
-                      {v.isValid ? '✓ Valid password (member can change their own password after logging in)' : v.errors.join(' • ')}
-                    </p>
-                  );
-                })()}
+          {inviteAccount && !formData.email && (
+            <div className="pt-2 border-t border-maroon-200/60 dark:border-maroon-800/60">
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                <span>ℹ️ Please enter the member's <strong>Email Address</strong> above to send the invitation email.</span>
               </div>
             </div>
           )}

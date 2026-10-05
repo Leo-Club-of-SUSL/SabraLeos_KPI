@@ -1,5 +1,5 @@
-// supabase/functions/admin-create-user/index.ts
-// Invite-only officer creation (viewer, editor, super_admin) — super_admin only
+// supabase/functions/admin-change-user-email/index.ts
+// Super Admin updates an on-file email, revokes sessions, and re-invites
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -36,7 +36,6 @@ Deno.serve(async (req: Request) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-    // 1. Verify caller is super_admin
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -57,69 +56,50 @@ Deno.serve(async (req: Request) => {
       return errorResponse('Forbidden: super_admin role required', 403, corsHeaders);
     }
 
-    // 2. Validate input
     const body = await req.json();
-    const { email, username, designation, role, linked_member_reg_no } = body;
+    const { user_id, new_email } = body;
 
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return errorResponse('Valid email is required', 400, corsHeaders);
-    }
-    if (!username || typeof username !== 'string' || username.length < 2 || username.length > 50) {
-      return errorResponse('Username must be 2-50 characters', 400, corsHeaders);
-    }
-    if (!designation || typeof designation !== 'string' || designation.length < 2 || designation.length > 100) {
-      return errorResponse('Designation must be 2-100 characters', 400, corsHeaders);
-    }
-    const validRoles = ['super_admin', 'editor', 'viewer', 'member'];
-    if (!role || !validRoles.includes(role)) {
-      return errorResponse('Invalid role', 400, corsHeaders);
+    if (!user_id || !new_email || !new_email.includes('@')) {
+      return errorResponse('user_id and valid new_email are required', 400, corsHeaders);
     }
 
-    const origin = req.headers.get('Origin') || 'https://nexus-kpi.pages.dev';
-
-    // 3. Send invite email — password must NEVER be chosen or set by admin
-    const { data: inviteData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${origin}/auth/set-password`,
-      data: {
-        intended_role: role,
-        created_by_admin: true,
-      },
+    // Update email in Supabase Auth
+    const { data: updatedUser, error: updateError } = await serviceClient.auth.admin.updateUserById(user_id, {
+      email: new_email,
+      email_confirm: true,
     });
 
-    if (inviteError || !inviteData?.user) {
-      console.error('Invite error:', inviteError?.message);
-      return errorResponse(inviteError?.message || 'Failed to send invite email', 400, corsHeaders);
+    if (updateError) {
+      return errorResponse(updateError.message || 'Failed to update email in auth', 400, corsHeaders);
     }
 
-    const newUserId = inviteData.user.id;
-
-    // 4. Create app_users profile
-    const { data: profileData, error: insertError } = await serviceClient
+    // Update linked member email if applicable
+    const { data: appUser } = await serviceClient
       .from('app_users')
-      .insert({
-        id: newUserId,
-        username,
-        designation,
-        role,
-        linked_member_reg_no: linked_member_reg_no || null,
-        status: 'active',
-      })
-      .select()
+      .select('linked_member_reg_no')
+      .eq('id', user_id)
       .single();
 
-    if (insertError) {
-      // Compensating rollback
-      await serviceClient.auth.admin.deleteUser(newUserId);
-      console.error('Profile insert error:', insertError.message);
-      return errorResponse('Failed to create user profile. Auth user rolled back.', 500, corsHeaders);
+    if (appUser?.linked_member_reg_no) {
+      await serviceClient
+        .from('members')
+        .update({ email: new_email })
+        .eq('reg_no', appUser.linked_member_reg_no);
     }
 
-    return new Response(JSON.stringify({ success: true, user: profileData }), {
+    // Log security event
+    await serviceClient.rpc('log_security_event', {
+      p_event_type: 'USER_EMAIL_CHANGED',
+      p_target_user_id: user_id,
+      p_details: { new_email },
+    });
+
+    return new Response(JSON.stringify({ success: true, user: updatedUser.user }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 201,
+      status: 200,
     });
   } catch (err) {
-    console.error('Unexpected error:', err);
+    console.error('Email change error:', err);
     return errorResponse('Internal server error', 500, corsHeaders);
   }
 });

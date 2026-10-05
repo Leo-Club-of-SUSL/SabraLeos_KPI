@@ -15,6 +15,8 @@ export function TierSettingsManagement() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<import('../services/system-service').TierPreviewResult | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   useEffect(() => {
     setFormData(currentThresholds);
@@ -30,7 +32,7 @@ export function TierSettingsManagement() {
     setSuccess(null);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleRequestPreview = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
@@ -59,7 +61,22 @@ export function TierSettingsManagement() {
 
     try {
       setSaving(true);
+      const impact = await systemService.previewTierChanges(formData);
+      setPreviewData(impact);
+      setShowPreviewModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to preview impact of tier changes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmSave = async () => {
+    try {
+      setSaving(true);
+      setError(null);
       await systemService.updateTierThresholds(formData);
+      setShowPreviewModal(false);
       setSuccess('Standing tier point thresholds updated successfully across the entire system!');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update tier thresholds');
@@ -161,7 +178,7 @@ export function TierSettingsManagement() {
         </button>
       </div>
 
-      <form onSubmit={handleSave} className="p-6 space-y-6">
+      <form onSubmit={handleRequestPreview} className="p-6 space-y-6">
         {error && (
           <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-3 text-red-700 dark:text-red-300 text-sm">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -261,10 +278,66 @@ export function TierSettingsManagement() {
             className="w-full sm:w-auto px-6 py-3 bg-maroon-600 hover:bg-maroon-700 disabled:bg-maroon-400 text-white font-bold rounded-xl shadow-lg shadow-maroon-600/20 hover:shadow-maroon-600/40 transition-all flex items-center justify-center gap-2"
           >
             <Save className="w-4 h-4" />
-            {saving ? 'Saving Thresholds...' : 'Save Standing Thresholds'}
+            {saving ? 'Previewing Impact...' : 'Save Standing Thresholds'}
           </button>
         </div>
       </form>
+
+      {/* Impact Confirmation Modal */}
+      {showPreviewModal && previewData && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Confirm Tier Threshold Update</h3>
+                  <p className="text-xs text-gray-500">Preview of impact on active club members</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700 text-center">
+                <div>
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase">Promotions</span>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">+{previewData.promotions}</p>
+                </div>
+                <div>
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase">Demotions</span>
+                  <p className="text-xl font-bold text-red-600 dark:text-red-400">-{previewData.demotions}</p>
+                </div>
+                <div>
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase">Unchanged</span>
+                  <p className="text-xl font-bold text-gray-700 dark:text-gray-300">{previewData.unchanged}</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                Total evaluated active members: <strong>{previewData.total_members}</strong>. Applying this change will update standing tiers immediately in the database and audit logs.
+              </p>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPreviewModal(false)}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-xl text-xs hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmSave}
+                  disabled={saving}
+                  className="flex-1 px-4 py-2.5 bg-maroon-600 hover:bg-maroon-700 text-white font-bold rounded-xl text-xs transition-colors shadow-md"
+                >
+                  {saving ? 'Applying...' : 'Confirm & Apply'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

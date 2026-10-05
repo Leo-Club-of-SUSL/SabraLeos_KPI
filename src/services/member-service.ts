@@ -5,93 +5,50 @@ import type { Member, MemberInsert, MemberUpdate } from '../types/database';
 
 export const memberService = {
   async getAll(): Promise<Member[]> {
-    const res = await supabase
+    const { data, error } = await supabase
       .from('members')
       .select('*')
       .is('deleted_at', null)
       .order('total_points', { ascending: false });
 
-    if (res.error) {
-      if (res.error.code === '42703') {
-        const fallback = await supabase
-          .from('members')
-          .select('*')
-          .order('total_points', { ascending: false });
-        if (fallback.error) throw fallback.error;
-        return (fallback.data as Member[]) || [];
-      }
-      throw res.error;
-    }
-    return (res.data as Member[]) || [];
+    if (error) throw error;
+    return (data as Member[]) || [];
   },
 
   async getByRegNo(regNo: string): Promise<Member | null> {
-    const res = await supabase
+    const { data, error } = await supabase
       .from('members')
       .select('*')
       .ilike('reg_no', regNo)
       .is('deleted_at', null)
       .maybeSingle();
 
-    if (res.error) {
-      if (res.error.code === '42703') {
-        const fallback = await supabase
-          .from('members')
-          .select('*')
-          .ilike('reg_no', regNo)
-          .maybeSingle();
-        if (fallback.error) throw fallback.error;
-        return fallback.data as Member | null;
-      }
-      throw res.error;
-    }
-    return res.data as Member | null;
+    if (error) throw error;
+    return data as Member | null;
   },
 
   async getTopMembers(limit: number = 3): Promise<Member[]> {
-    const res = await supabase
+    const { data, error } = await supabase
       .from('members')
       .select('*')
       .is('deleted_at', null)
       .order('total_points', { ascending: false })
       .limit(limit);
 
-    if (res.error) {
-      if (res.error.code === '42703') {
-        const fallback = await supabase
-          .from('members')
-          .select('*')
-          .order('total_points', { ascending: false })
-          .limit(limit);
-        if (fallback.error) throw fallback.error;
-        return (fallback.data as Member[]) || [];
-      }
-      throw res.error;
-    }
-    return (res.data as Member[]) || [];
+    if (error) throw error;
+    return (data as Member[]) || [];
   },
 
   async getByFaculty(faculty: string): Promise<Member[]> {
-    const res = await supabase
+    const { data, error } = await supabase
       .from('members')
       .select('*')
       .eq('faculty', faculty)
       .is('deleted_at', null)
       .order('total_points', { ascending: false });
 
-    if (res.error) {
-      if (res.error.code === '42703') {
-        const fallback = await supabase
-          .from('members')
-          .select('*')
-          .eq('faculty', faculty)
-          .order('total_points', { ascending: false });
-        if (fallback.error) throw fallback.error;
-        return (fallback.data as Member[]) || [];
-      }
-      throw res.error;
-    }
-    return (res.data as Member[]) || [];
+    if (error) throw error;
+    return (data as Member[]) || [];
   },
 
   async create(member: MemberInsert): Promise<Member> {
@@ -101,31 +58,12 @@ export const memberService = {
       .select()
       .single();
 
-    if (error) {
-      if (error.code === '42703') {
-        // Fallback for when newer columns (email, member_status, etc.) are not yet in the DB
-        const { email, member_status, leaderboard_opt_out, display_alias, ...legacyMember } = member as Record<string, unknown>;
-        const fallback = await db()
-          .from('members')
-          .insert({ ...(legacyMember as unknown as MemberInsert), reg_no: member.reg_no.toUpperCase() })
-          .select()
-          .single();
-        if (fallback.error) throw fallback.error;
-        return {
-          ...fallback.data,
-          email: (email as string) ?? null,
-          member_status: (member_status as string) ?? 'active',
-          leaderboard_opt_out: (leaderboard_opt_out as boolean) ?? false,
-          display_alias: (display_alias as string) ?? null,
-        } as Member;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return data as Member;
   },
 
   async update(regNo: string, updates: MemberUpdate): Promise<Member> {
-    const res = await db()
+    const { data, error } = await db()
       .from('members')
       .update(updates)
       .ilike('reg_no', regNo)
@@ -133,41 +71,8 @@ export const memberService = {
       .select()
       .single();
 
-    if (res.error) {
-      if (res.error.code === '42703') {
-        // If 42703 occurs, try without deleted_at first
-        const retryWithAllUpdates = await db()
-          .from('members')
-          .update(updates)
-          .ilike('reg_no', regNo)
-          .select()
-          .single();
-
-        if (!retryWithAllUpdates.error) {
-          return retryWithAllUpdates.data as Member;
-        }
-
-        // If still 42703, strip the newer columns that may be missing in remote schema
-        const { email, member_status, leaderboard_opt_out, display_alias, deleted_at, ...legacyUpdates } = updates as Record<string, unknown>;
-        const fallback = await db()
-          .from('members')
-          .update(legacyUpdates as unknown as MemberUpdate)
-          .ilike('reg_no', regNo)
-          .select()
-          .single();
-
-        if (fallback.error) throw fallback.error;
-        return {
-          ...fallback.data,
-          email: (email as string) ?? null,
-          member_status: (member_status as string) ?? 'active',
-          leaderboard_opt_out: (leaderboard_opt_out as boolean) ?? false,
-          display_alias: (display_alias as string) ?? null,
-        } as Member;
-      }
-      throw res.error;
-    }
-    return res.data as Member;
+    if (error) throw error;
+    return data as Member;
   },
 
   async uploadPhoto(file: File, oldPhotoUrl?: string | null): Promise<string> {

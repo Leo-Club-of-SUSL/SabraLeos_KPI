@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LoginScreen } from './components/LoginScreen';
+import { SetPassword } from './pages/SetPassword';
+import { ForgotPassword } from './pages/ForgotPassword';
 
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './pages/Dashboard';
@@ -18,6 +20,29 @@ function AppContent() {
   const [pageData, setPageData] = useState<unknown>(null);
   const [dbInitialized, setDbInitialized] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
+
+  // Check URL hash or path for auth routes (invite acceptance, password reset)
+  const isAuthRoute = () => {
+    const hash = window.location.hash;
+    const path = window.location.pathname;
+    if (hash.includes('set-password') || path.includes('/auth/set-password') || hash.includes('type=recovery') || hash.includes('type=invite')) {
+      return 'set-password';
+    }
+    if (hash.includes('forgot-password') || path.includes('/auth/forgot-password')) {
+      return 'forgot-password';
+    }
+    return null;
+  };
+
+  const [authRoute, setAuthRoute] = useState<string | null>(isAuthRoute());
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setAuthRoute(isAuthRoute());
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   useEffect(() => {
     const initDB = async () => {
@@ -44,6 +69,14 @@ function AppContent() {
     setCurrentPage(page);
     setPageData(data);
   };
+
+  if (authRoute === 'set-password') {
+    return <SetPassword />;
+  }
+
+  if (authRoute === 'forgot-password') {
+    return <ForgotPassword />;
+  }
 
   if (loading || dbLoading) {
     return (

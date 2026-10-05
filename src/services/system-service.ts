@@ -1,7 +1,97 @@
 import { supabase } from '../lib/supabase';
-import type { Faculty, FacultyInsert, FacultyUpdate, Batch, BatchInsert, BatchUpdate, Avenue, AvenueInsert, AvenueUpdate } from '../types/database';
+import type { Faculty, FacultyInsert, FacultyUpdate, Batch, BatchInsert, BatchUpdate, Avenue, AvenueInsert, AvenueUpdate, Json } from '../types/database';
+
+export const EXPECTED_SCHEMA_VERSION = '2026.10.06.1';
+
+export interface TierPreviewResult {
+  promotions: number;
+  demotions: number;
+  unchanged: number;
+  total_members: number;
+}
+
+export interface SecurityAlert {
+  id: string;
+  alert_type: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  title: string;
+  description: string;
+  metadata: Record<string, unknown>;
+  is_resolved: boolean;
+  created_at: string;
+}
+
+export interface SecurityEvent {
+  id: string;
+  event_type: string;
+  user_id: string | null;
+  actor_id: string | null;
+  ip_address: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}
 
 export const systemService = {
+  // Schema Version Check
+  async checkSchemaVersion(): Promise<{ matches: boolean; current: string | null; expected: string }> {
+    try {
+      const { data, error } = await supabase.rpc('get_schema_version');
+      if (error || !data) {
+        return { matches: false, current: null, expected: EXPECTED_SCHEMA_VERSION };
+      }
+      return {
+        matches: data === EXPECTED_SCHEMA_VERSION,
+        current: data,
+        expected: EXPECTED_SCHEMA_VERSION,
+      };
+    } catch {
+      return { matches: false, current: null, expected: EXPECTED_SCHEMA_VERSION };
+    }
+  },
+
+  // Security Alerts & Logs
+  async getSecurityAlerts(unresolvedOnly = true): Promise<SecurityAlert[]> {
+    let query = supabase
+      .from('security_alerts')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (unresolvedOnly) {
+      query = query.eq('is_resolved', false);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.warn('Error fetching security_alerts:', error.message);
+      return [];
+    }
+    return (data as SecurityAlert[]) || [];
+  },
+
+  async resolveSecurityAlert(alertId: string): Promise<void> {
+    const { error } = await supabase
+      .from('security_alerts')
+      .update({ is_resolved: true })
+      .eq('id', alertId);
+
+    if (error) throw error;
+  },
+
+  async getSecurityEvents(): Promise<SecurityEvent[]> {
+    const { data, error } = await supabase
+      .from('security_events')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.warn('Error fetching security_events:', error.message);
+      return [];
+    }
+    return (data as SecurityEvent[]) || [];
+  },
+
   // Faculties
   async getFaculties(): Promise<Faculty[]> {
     const { data, error } = await supabase
@@ -142,7 +232,7 @@ export const systemService = {
         .maybeSingle();
 
       if (error) {
-        console.warn('Could not fetch tier_thresholds from database, using cached/default values', error.message);
+        console.warn('Could not fetch tier_thresholds from database, using active defaults', error.message);
       }
 
       if (data && data.value && typeof data.value === 'object') {
@@ -164,8 +254,17 @@ export const systemService = {
     return getActiveTierThresholds();
   },
 
+  // Preview Tier Changes (simulates impact on active members before committing)
+  async previewTierChanges(thresholds: import('../lib/tier-calculator').TierThresholds): Promise<TierPreviewResult> {
+    const { data, error } = await supabase.rpc('preview_tier_changes', {
+      p_thresholds: thresholds as unknown as Json,
+    });
+    if (error) throw error;
+    return data as unknown as TierPreviewResult;
+  },
+
+  // Update Tier Thresholds via Hardened SECURITY DEFINER RPC
   async updateTierThresholds(thresholds: import('../lib/tier-calculator').TierThresholds): Promise<import('../lib/tier-calculator').TierThresholds> {
-    // Validate ascending order
     if (
       thresholds.official <= 0 ||
       thresholds.bronze <= thresholds.official ||
@@ -173,31 +272,19 @@ export const systemService = {
       thresholds.gold <= thresholds.silver ||
       thresholds.platinum <= thresholds.gold
     ) {
-      throw new Error('Tier thresholds must strictly increase: Official < Bronze < Silver < Gold < Platinum');
+      throw new Error('Tier thresholds must strictly increase: Prospect (0) < Official < Bronze < Silver < Gold < Platinum');
     }
 
     const { setCustomTierThresholds } = await import('../lib/tier-calculator');
 
-    try {
-      const { error } = await supabase
-        .from('system_settings')
-        .upsert(
-          {
-            key: 'tier_thresholds',
-            value: thresholds as unknown as import('../types/database').Json,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'key' }
-        );
+    const { data, error } = await supabase.rpc('update_tier_thresholds', {
+      p_thresholds: thresholds as unknown as Json,
+    });
 
-      if (error) {
-        console.warn('Database upsert for tier_thresholds failed, updating locally:', error.message);
-      }
-    } catch (err) {
-      console.warn('Database error while saving tier_thresholds:', err);
-    }
+    if (error) throw error;
 
-    setCustomTierThresholds(thresholds);
-    return thresholds;
+    const saved = data as unknown as import('../lib/tier-calculator').TierThresholds;
+    setCustomTierThresholds(saved);
+    return saved;
   },
 };

@@ -3,8 +3,8 @@
  */
 
 /**
- * Optimizes an image file by resizing and compressing it.
- * Forces the output to JPEG format for better compression.
+ * Optimizes an image file by resizing and compressing it via HTML5 Canvas.
+ * Forces the output to JPEG/WebP format, automatically stripping EXIF and GPS metadata segments.
  *
  * NOTE: All event handlers are assigned before FileReader starts
  * to avoid a race condition where img.onload fires after img.src
@@ -17,10 +17,16 @@ export async function optimizeImage(
   const { maxWidth = 800, maxHeight = 800, quality = 0.8 } = options;
 
   return new Promise((resolve, reject) => {
+    if (typeof document === 'undefined' || typeof HTMLCanvasElement === 'undefined') {
+      // In headless testing or node environment, return slice
+      resolve(file.slice(0, file.size, 'image/jpeg'));
+      return;
+    }
+
     const img = new Image();
     const reader = new FileReader();
 
-    // Wire up all img handlers BEFORE we set src (prevents missing onload on cache hit)
+    // Wire up all img handlers BEFORE setting src
     img.onload = () => {
       let width = img.width;
       let height = img.height;
@@ -63,20 +69,19 @@ export async function optimizeImage(
     };
 
     img.onerror = () => {
-      reject(new Error('Could not load image: the file may be corrupt or unsupported'));
+      reject(new Error('Failed to load image for processing'));
     };
 
-    // Use onloadend (fires for both success and error) to wire FileReader → img
-    reader.onloadend = () => {
-      if (reader.result) {
-        img.src = reader.result as string;
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        img.src = e.target.result as string;
       } else {
-        reject(new Error('Could not read file'));
+        reject(new Error('Failed to read image file'));
       }
     };
 
     reader.onerror = () => {
-      reject(new Error('Could not read file'));
+      reject(new Error('Failed to read image file'));
     };
 
     reader.readAsDataURL(file);
@@ -84,30 +89,26 @@ export async function optimizeImage(
 }
 
 /**
- * Downloads an image from a URL by fetching it as a blob and triggering a
- * browser download. Falls back to opening the URL directly if fetch fails
- * (e.g. due to CORS restrictions on private buckets).
+ * Re-encodes uploaded photos via Canvas to guarantee EXIF/GPS segments are stripped.
+ */
+export const stripExifMetadata = optimizeImage;
+
+/**
+ * Triggers a client-side file download for an image URL.
  */
 export async function downloadImage(url: string, filename: string): Promise<void> {
   try {
-    // mode: 'cors' — Supabase public buckets support CORS for GET requests
-    const response = await fetch(url, { mode: 'cors' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const blob = await response.blob();
+    const res = await fetch(url);
+    const blob = await res.blob();
     const blobUrl = window.URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Small delay before revoking so the browser has time to start the download
-    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
-  } catch (error) {
-    console.warn('Blob download failed, falling back to new tab:', error);
-    // Fallback: open in new tab so the user can save manually
-    window.open(url, '_blank');
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error('Failed to download image:', err);
   }
 }

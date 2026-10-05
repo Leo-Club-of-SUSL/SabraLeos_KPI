@@ -1,5 +1,5 @@
-// supabase/functions/admin-create-user/index.ts
-// Invite-only officer creation (viewer, editor, super_admin) — super_admin only
+// supabase/functions/admin-send-password-reset/index.ts
+// Super Admin initiates password reset for another user (sends email to their inbox only)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -59,67 +59,46 @@ Deno.serve(async (req: Request) => {
 
     // 2. Validate input
     const body = await req.json();
-    const { email, username, designation, role, linked_member_reg_no } = body;
+    const { user_id } = body;
 
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return errorResponse('Valid email is required', 400, corsHeaders);
+    if (!user_id || typeof user_id !== 'string') {
+      return errorResponse('user_id is required', 400, corsHeaders);
     }
-    if (!username || typeof username !== 'string' || username.length < 2 || username.length > 50) {
-      return errorResponse('Username must be 2-50 characters', 400, corsHeaders);
-    }
-    if (!designation || typeof designation !== 'string' || designation.length < 2 || designation.length > 100) {
-      return errorResponse('Designation must be 2-100 characters', 400, corsHeaders);
-    }
-    const validRoles = ['super_admin', 'editor', 'viewer', 'member'];
-    if (!role || !validRoles.includes(role)) {
-      return errorResponse('Invalid role', 400, corsHeaders);
+
+    // Look up target auth user
+    const { data: targetUser, error: userError } = await serviceClient.auth.admin.getUserById(user_id);
+    if (userError || !targetUser?.user?.email) {
+      return errorResponse('Target user not found or has no email', 404, corsHeaders);
     }
 
     const origin = req.headers.get('Origin') || 'https://nexus-kpi.pages.dev';
 
-    // 3. Send invite email — password must NEVER be chosen or set by admin
-    const { data: inviteData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${origin}/auth/set-password`,
-      data: {
-        intended_role: role,
-        created_by_admin: true,
-      },
+    // 3. Send reset email via Supabase Auth
+    const { error: resetError } = await serviceClient.auth.resetPasswordForEmail(
+      targetUser.user.email,
+      {
+        redirectTo: `${origin}/auth/set-password`,
+      }
+    );
+
+    if (resetError) {
+      console.error('Password reset email error:', resetError.message);
+      return errorResponse('Failed to send password reset email', 500, corsHeaders);
+    }
+
+    // 4. Log security event in DB
+    await serviceClient.rpc('log_security_event', {
+      p_event_type: 'ADMIN_RESET_PASSWORD_TRIGGERED',
+      p_target_user_id: user_id,
+      p_details: { target_email: targetUser.user.email },
     });
 
-    if (inviteError || !inviteData?.user) {
-      console.error('Invite error:', inviteError?.message);
-      return errorResponse(inviteError?.message || 'Failed to send invite email', 400, corsHeaders);
-    }
-
-    const newUserId = inviteData.user.id;
-
-    // 4. Create app_users profile
-    const { data: profileData, error: insertError } = await serviceClient
-      .from('app_users')
-      .insert({
-        id: newUserId,
-        username,
-        designation,
-        role,
-        linked_member_reg_no: linked_member_reg_no || null,
-        status: 'active',
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      // Compensating rollback
-      await serviceClient.auth.admin.deleteUser(newUserId);
-      console.error('Profile insert error:', insertError.message);
-      return errorResponse('Failed to create user profile. Auth user rolled back.', 500, corsHeaders);
-    }
-
-    return new Response(JSON.stringify({ success: true, user: profileData }), {
+    return new Response(JSON.stringify({ success: true, message: 'Password reset email sent to user' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 201,
+      status: 200,
     });
   } catch (err) {
-    console.error('Unexpected error:', err);
+    console.error('Admin password reset error:', err);
     return errorResponse('Internal server error', 500, corsHeaders);
   }
 });

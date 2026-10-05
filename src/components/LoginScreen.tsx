@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogIn, Loader2, Eye, EyeOff, ShieldAlert } from 'lucide-react';
+import { LogIn, Loader2, Eye, EyeOff, ShieldAlert, Lock, Mail } from 'lucide-react';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_SECONDS = 60;
@@ -44,8 +44,8 @@ export function LoginScreen() {
 
     try {
       await signIn(email, password);
-      setFailedAttempts(0); // Reset on success
-    } catch (err) {
+      setFailedAttempts(0);
+    } catch {
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
 
@@ -54,12 +54,8 @@ export function LoginScreen() {
         setFailedAttempts(0);
         setError(`Too many failed attempts. Please wait ${LOCKOUT_SECONDS} seconds.`);
       } else {
-        const message = err instanceof Error ? err.message : 'Login failed';
-        if (message.includes('Invalid login credentials')) {
-          setError(`Invalid email or password. ${MAX_ATTEMPTS - newAttempts} attempt(s) remaining.`);
-        } else {
-          setError(message);
-        }
+        // Uniform error response
+        setError(`Invalid email or password. ${MAX_ATTEMPTS - newAttempts} attempt(s) remaining.`);
       }
     } finally {
       setLoading(false);
@@ -67,137 +63,120 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4">
-      {/* Floating Tile Container - Portrait Style */}
-      <div className="w-full max-w-md glass-panel rounded-[2rem] shadow-2xl relative overflow-hidden flex flex-col items-center py-8 px-6 max-h-[95vh]">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-gray-900 via-maroon-950 to-gray-900">
+      {/* Floating Card Container */}
+      <div className="w-full max-w-md glass-panel rounded-[2rem] shadow-2xl relative overflow-hidden flex flex-col items-center py-8 px-6 border border-white/10 bg-white/5 backdrop-blur-xl">
 
         {/* Top Title */}
         <div className="w-full text-center z-10 flex-shrink-0 mb-6">
-          <h1 className="text-4xl font-bold text-black dark:text-white tracking-tighter font-['Oswald'] uppercase drop-shadow-sm">
-            KPI SYSTEM
+          <h1 className="text-3xl font-black text-white tracking-tighter uppercase font-['Oswald'] drop-shadow-sm">
+            SabraLeos KPI
           </h1>
+          <p className="text-xs text-amber-200/80 font-medium mt-1 tracking-wider uppercase">
+            Performance & Leadership Portal
+          </p>
         </div>
 
         {/* Main Content Wrapper */}
-        <div className="flex-1 w-full flex flex-col items-center justify-center relative z-10 min-h-0">
+        <div className="w-full flex flex-col items-center justify-center relative z-10">
 
           {/* Main Logo */}
           <div className="mb-6 relative group flex-shrink-0">
-            <div className="w-40 h-40 rounded-full flex items-center justify-center shadow-xl overflow-hidden relative">
+            <div className="w-28 h-28 rounded-full flex items-center justify-center shadow-xl overflow-hidden relative border-2 border-amber-400/40 bg-maroon-900/40 p-2">
               <img
                 src="/images/Round_logo.png"
                 alt="Leo Club Logo"
-                className="w-full h-full object-cover opacity-100"
+                className="w-full h-full object-contain"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
-                  e.currentTarget.parentElement?.classList.add('bg-[url("https://upload.wikimedia.org/wikipedia/en/7/7f/Leo_Club_Logo.svg")]', 'bg-center', 'bg-contain', 'bg-no-repeat');
                 }}
               />
             </div>
           </div>
 
-          {/* Club Name */}
-          <div className="text-center mb-8 flex-shrink-0 px-4">
-            <h2 className="text-lg font-serif font-bold text-black dark:text-white tracking-wide uppercase leading-tight drop-shadow-md">
-              Leo Club of<br />
-              Sabaragamuwa<br />
-              University of Sri Lanka
-            </h2>
-          </div>
-
-          {/* Login Form */}
-          <form onSubmit={handleSubmit} className="w-full space-y-3 relative z-20 flex-shrink-0">
-            <div className="relative group">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoFocus
-                required
-                className="w-full bg-white text-black px-4 py-3 font-bold text-base shadow-md border-none focus:ring-2 focus:ring-maroon-600 outline-none placeholder-black/60 text-center rounded-xl"
-                placeholder="USER NAME OR EMAIL"
-              />
-            </div>
-
-            <div className="relative group">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full bg-white text-black px-4 py-3 font-bold text-base shadow-md border-none focus:ring-2 focus:ring-maroon-600 outline-none placeholder-black/60 text-center rounded-xl pr-10"
-                placeholder="PASSWORD"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-500 hover:text-maroon-600 transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="w-full space-y-4">
             {error && (
-              <div className="bg-red-100 border-l-4 border-red-600 text-red-700 p-2 text-xs font-bold shadow-md text-center" role="alert">
-                {error}
+              <div className="p-3.5 bg-red-500/20 border border-red-500/40 rounded-xl flex items-center gap-2.5 text-red-200 text-xs animate-shake">
+                <ShieldAlert className="w-4 h-4 flex-shrink-0 text-red-400" />
+                <span>{error}</span>
               </div>
             )}
 
-            {isLockedOut && (
-              <div className="bg-amber-50 border border-amber-300 text-amber-800 p-3 rounded-xl text-xs font-bold shadow-md text-center flex items-center justify-center gap-2">
-                <ShieldAlert className="w-4 h-4" />
-                Account locked. Try again in {lockoutRemaining}s
+            <div>
+              <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">
+                Email Address
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={isLockedOut || loading}
+                  placeholder="leo.member@domain.com"
+                  className="w-full px-4 py-3 pl-10 border border-white/10 rounded-xl bg-white/10 text-white placeholder-gray-400 focus:ring-2 focus:ring-amber-400/80 outline-none text-sm disabled:opacity-50 transition-all"
+                />
+                <Mail className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
               </div>
-            )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider">
+                  Password
+                </label>
+                <a
+                  href="/#auth/forgot-password"
+                  className="text-xs text-amber-300 hover:text-amber-200 hover:underline transition-colors"
+                >
+                  Forgot password?
+                </a>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={isLockedOut || loading}
+                  placeholder="Enter your password"
+                  className="w-full px-4 py-3 pl-10 pr-10 border border-white/10 rounded-xl bg-white/10 text-white placeholder-gray-400 focus:ring-2 focus:ring-amber-400/80 outline-none text-sm disabled:opacity-50 transition-all"
+                />
+                <Lock className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLockedOut || loading}
+                  className="absolute right-3.5 top-3.5 text-gray-400 hover:text-white transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
 
             <button
               type="submit"
               disabled={loading || isLockedOut}
-              className={`w-full font-bold py-3 px-4 rounded-xl shadow-lg uppercase tracking-widest transition-all duration-200 flex items-center justify-center gap-2 mt-2 ${isLockedOut
-                ? 'bg-gray-400 cursor-not-allowed text-gray-200'
-                : 'bg-maroon-600 hover:bg-maroon-700 text-white'
-                }`}
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-maroon-950 font-black tracking-wider uppercase rounded-xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2 text-sm mt-2"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Logging in...
+                  <Loader2 className="w-4 h-4 animate-spin" /> Signing In...
                 </>
               ) : isLockedOut ? (
-                <>
-                  <ShieldAlert className="w-4 h-4" />
-                  LOCKED ({lockoutRemaining}s)
-                </>
+                `Locked (${lockoutRemaining}s)`
               ) : (
                 <>
-                  <LogIn className="w-4 h-4" />
-                  LOGIN
+                  <LogIn className="w-4 h-4" /> Sign In
                 </>
               )}
             </button>
           </form>
-        </div>
 
-        {/* Background Mask Graphic - Subtle & Behind Content */}
-        <div className="absolute right-0 bottom-0 w-[250px] h-[400px] pointer-events-none z-0 opacity-10 dark:opacity-5 mix-blend-multiply dark:mix-blend-normal">
-          <img
-            src="/images/side-mask.png"
-            alt="Traditional Mask"
-            className="w-full h-full object-contain object-bottom-right"
-            onError={(e) => e.currentTarget.style.display = 'none'}
-          />
-        </div>
-
-        {/* Footer */}
-        <div className="w-full z-10 mt-6 flex-shrink-0">
-          <div className="text-center space-y-0.5">
-            <p className="text-black dark:text-white font-bold tracking-widest uppercase text-[10px]">
-              Leo Club of Sabaragamuwa University
-            </p>
-            <p className="text-gray-600 dark:text-gray-400 text-[9px]">
-              © 2025 All rights reserved.
-            </p>
-          </div>
+          <p className="text-[11px] text-gray-400 text-center mt-6">
+            Leo Club of Sabaragamuwa University of Sri Lanka
+          </p>
         </div>
       </div>
     </div>

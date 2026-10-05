@@ -77,11 +77,101 @@ export type Database = {
         Update: SystemSettingUpdate;
         Relationships: [];
       };
+      security_alerts: {
+        Row: {
+          id: string;
+          alert_type: string;
+          severity: 'low' | 'medium' | 'high' | 'critical';
+          title: string;
+          description: string | null;
+          metadata: Json;
+          is_resolved: boolean;
+          resolved_by: string | null;
+          resolved_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          alert_type: string;
+          severity: 'low' | 'medium' | 'high' | 'critical';
+          title: string;
+          description?: string | null;
+          metadata?: Json;
+          is_resolved?: boolean;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<{
+          is_resolved: boolean;
+          resolved_by: string | null;
+          resolved_at: string | null;
+        }>;
+        Relationships: [];
+      };
+      security_events: {
+        Row: {
+          id: string;
+          event_type: string;
+          user_id: string | null;
+          actor_id: string | null;
+          ip_address: string | null;
+          details: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_type: string;
+          user_id?: string | null;
+          actor_id?: string | null;
+          ip_address?: string | null;
+          details?: Json;
+          created_at?: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      schema_meta: {
+        Row: {
+          version: string;
+          applied_at: string;
+          description: string | null;
+        };
+        Insert: {
+          version: string;
+          applied_at?: string;
+          description?: string | null;
+        };
+        Update: Partial<{
+          description: string | null;
+        }>;
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
+      get_schema_version: {
+        Args: Record<never, never>;
+        Returns: string;
+      };
+      get_my_session_context: {
+        Args: Record<never, never>;
+        Returns: Json;
+      };
+      update_tier_thresholds: {
+        Args: { p_thresholds: Json };
+        Returns: Json;
+      };
+      preview_tier_changes: {
+        Args: { p_thresholds: Json };
+        Returns: Json;
+      };
+      log_security_event: {
+        Args: { p_event_type: string; p_target_user_id?: string | null; p_details?: Json };
+        Returns: void;
+      };
       get_my_role: {
         Args: Record<never, never>;
         Returns: string | null;
