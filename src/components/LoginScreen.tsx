@@ -188,22 +188,9 @@ export function LoginScreen() {
           />
         </div>
 
-        {/* Footer Logos */}
+        {/* Footer */}
         <div className="w-full z-10 mt-6 flex-shrink-0">
-          <div className="bg-white/50 dark:bg-white/10 backdrop-blur-sm rounded-full py-2 px-6 mx-auto max-w-fit shadow-sm flex items-center justify-center border border-white/20">
-            <img
-              src="/images/LOGO_LINE.png"
-              alt="Sponsors"
-              className="h-8 md:h-10 w-auto object-contain"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                e.currentTarget.parentElement!.innerText = 'Sponsor Bar Placeholder';
-                e.currentTarget.parentElement!.classList.add('text-xs', 'text-gray-500', 'font-bold');
-              }}
-            />
-          </div>
-
-          <div className="text-center mt-3 space-y-0.5">
+          <div className="text-center space-y-0.5">
             <p className="text-black dark:text-white font-bold tracking-widest uppercase text-[10px]">
               Leo Club of Sabaragamuwa University
             </p>

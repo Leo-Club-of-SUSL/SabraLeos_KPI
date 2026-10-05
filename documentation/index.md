@@ -34,7 +34,13 @@ Project operations documents that illustrate installation, feature disabling, an
 - **[Account & User Management](USER_DELETION_GUIDE.md)**
   Specific instructions encompassing deletion, un-linking, or archiving of application user accounts securely without breaking dependent system data.
 
-## 3. High-Level Project Summary
+- **[Supabase Security Setup & Hardening](SUPABASE_SECURITY_SETUP.md)**
+  Security audit and instructions for configuring Row Level Security (RLS) policies and storage permissions.
+
+## 3. High-Level Project Summary & Technical Specifications
+
+- **[Comprehensive Technical Specification & Architecture](PROJECT_OVERVIEW.md)**
+  The exhaustive, all-in-one specification detailing the full codebase architecture, ERD, feature catalog, and design decisions (ideal reference for AI and new developers).
 
 - **[Project Summary Overview](PROJECT_SUMMARY.md)**
-  The absolute top-down executive summary encompassing all critical features of the current project status.
+  Top-down executive summary encompassing historical milestone details and features.

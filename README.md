@@ -28,9 +28,11 @@ For detailed guides and technical information, please refer to the following doc
 
 | Topic | Document |
 | :--- | :--- |
+| **Comprehensive Architecture & System Overview** | [PROJECT_OVERVIEW.md](documentation/PROJECT_OVERVIEW.md) |
 | **Getting Started** | [QUICK_START.md](documentation/QUICK_START.md) |
 | **User Roles & Access** | [PROJECT_SUMMARY.md#user-roles](documentation/PROJECT_SUMMARY.md) |
 | **Database Migration** | [DATABASE_SETUP.md](documentation/DATABASE_SETUP.md) |
+| **Supabase Security Setup** | [SUPABASE_SECURITY_SETUP.md](documentation/SUPABASE_SECURITY_SETUP.md) |
 | **System Architecture** | [architecture.md](documentation/architecture.md) |
 | **Database Schema** | [database_schema.md](documentation/database_schema.md) |
 | **API & Services** | [api_services.md](documentation/api_services.md) |
