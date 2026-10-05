@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { userService } from '../services/user-service';
 import { memberService } from '../services/member-service';
-import { UserPlus, Shield, Edit as EditIcon, Eye, EyeOff, Loader2, X, Trash2, Settings, Users as UsersIcon, ListTree } from 'lucide-react';
+import { UserPlus, Shield, Edit as EditIcon, Eye, EyeOff, Loader2, X, Trash2, Settings, Users as UsersIcon, ListTree, UserCheck, UserX, User } from 'lucide-react';
 import { SystemDataManagement } from '../components/SystemDataManagement';
 import { SystemLogs } from '../components/SystemLogs';
-import type { AppUser, Member } from '../types/database';
+import type { AppUser, Member, AppUserRole } from '../types/database';
 import { usePermissions } from '../hooks/usePermissions';
 import { validatePassword } from '../lib/sanitize';
 
@@ -15,6 +15,7 @@ export function UserManagement() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [activeTab, setActiveTab] = useState<'users' | 'system' | 'logs'>('system');
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const permissions = usePermissions();
 
   useEffect(() => {
@@ -36,8 +37,35 @@ export function UserManagement() {
     }
   };
 
+  const handleToggleStatus = async (user: AppUser) => {
+    const isSuspending = user.status === 'active';
+    const action = isSuspending ? 'suspend' : 'reactivate';
+
+    if (isSuspending && user.role === 'super_admin') {
+      const activeSuperAdmins = users.filter(u => u.role === 'super_admin' && u.status === 'active').length;
+      if (activeSuperAdmins <= 1) {
+        alert('Cannot suspend the last active Super Admin.');
+        return;
+      }
+    }
+
+    if (!confirm(`Are you sure you want to ${action} user "${user.username}"?`)) {
+      return;
+    }
+
+    try {
+      setActionLoadingId(user.id);
+      await userService.setStatus(user.id, action);
+      await loadData();
+    } catch (error) {
+      console.error(`Error ${action}ing user:`, error);
+      alert(`Failed to ${action} user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const handleDelete = async (userId: string, username: string, userRole: string) => {
-    // Check if this is a super admin and if they're the last one
     if (userRole === 'super_admin') {
       const superAdminCount = users.filter(u => u.role === 'super_admin').length;
       if (superAdminCount <= 1) {
@@ -51,11 +79,14 @@ export function UserManagement() {
     }
 
     try {
+      setActionLoadingId(userId);
       await userService.delete(userId);
-      loadData();
+      await loadData();
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert('Failed to delete user');
+      alert(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -67,6 +98,8 @@ export function UserManagement() {
         return <EditIcon className="w-5 h-5 text-blue-500" />;
       case 'viewer':
         return <Eye className="w-5 h-5 text-gray-500" />;
+      case 'member':
+        return <User className="w-5 h-5 text-emerald-500" />;
       default:
         return null;
     }
@@ -80,6 +113,8 @@ export function UserManagement() {
         return 'Editor';
       case 'viewer':
         return 'Viewer';
+      case 'member':
+        return 'Member';
       default:
         return role;
     }
@@ -179,7 +214,10 @@ export function UserManagement() {
 
         {activeTab === 'users' && (
           <button
-            onClick={() => setShowCreateForm(true)}
+            onClick={() => {
+              setEditingUser(null);
+              setShowCreateForm(true);
+            }}
             className="flex items-center gap-2 px-6 py-3 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
           >
             <UserPlus className="w-5 h-5" />
@@ -204,6 +242,9 @@ export function UserManagement() {
                     Role
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Linked Member
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -217,7 +258,7 @@ export function UserManagement() {
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                       No users found
                     </td>
                   </tr>
@@ -252,6 +293,17 @@ export function UserManagement() {
                           </span>
                         </div>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            user.status === 'active'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                          }`}
+                        >
+                          {user.status === 'active' ? 'Active' : 'Suspended'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                         {getMemberName(user.linked_member_reg_no)}
                       </td>
@@ -260,7 +312,27 @@ export function UserManagement() {
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end items-center gap-2">
+                          {/* Suspend / Reactivate button */}
+                          <button
+                            onClick={() => handleToggleStatus(user)}
+                            disabled={actionLoadingId === user.id}
+                            className={`p-2 rounded-lg transition-colors ${
+                              user.status === 'active'
+                                ? 'text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                                : 'text-emerald-600 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
+                            }`}
+                            title={user.status === 'active' ? 'Suspend User' : 'Reactivate User'}
+                          >
+                            {actionLoadingId === user.id ? (
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : user.status === 'active' ? (
+                              <UserX className="w-5 h-5" />
+                            ) : (
+                              <UserCheck className="w-5 h-5" />
+                            )}
+                          </button>
+
                           <button
                             onClick={() => {
                               setEditingUser(user);
@@ -305,26 +377,29 @@ export function UserManagement() {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
             Role Descriptions
           </h3>
-          <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400">
             <div className="flex items-start gap-2">
               <Shield className="w-4 h-4 text-red-500 mt-0.5" />
               <div>
-                <span className="font-medium text-gray-900 dark:text-white">Super Admin:</span> Can
-                create users, manage all members and contributions
+                <span className="font-medium text-gray-900 dark:text-white">Super Admin:</span> Full system access — user management, security controls, and logs.
               </div>
             </div>
             <div className="flex items-start gap-2">
               <EditIcon className="w-4 h-4 text-blue-500 mt-0.5" />
               <div>
-                <span className="font-medium text-gray-900 dark:text-white">Editor:</span> Can add
-                members and contributions, but cannot create users
+                <span className="font-medium text-gray-900 dark:text-white">Editor:</span> Operational access — add/edit members and project contributions.
               </div>
             </div>
             <div className="flex items-start gap-2">
               <Eye className="w-4 h-4 text-gray-500 mt-0.5" />
               <div>
-                <span className="font-medium text-gray-900 dark:text-white">Viewer:</span> Read-only
-                access to all data
+                <span className="font-medium text-gray-900 dark:text-white">Viewer:</span> Read-only access across members, leaderboards, and reports.
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <User className="w-4 h-4 text-emerald-500 mt-0.5" />
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white">Member:</span> Self-service access to own profile, points, tiers, and opt-out preferences.
               </div>
             </div>
           </div>
@@ -363,7 +438,7 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
     password: '',
     username: user?.username || '',
     designation: user?.designation || '',
-    role: (user?.role || 'viewer') as 'super_admin' | 'editor' | 'viewer',
+    role: (user?.role || 'viewer') as AppUserRole,
     linkedMemberRegNo: user?.linked_member_reg_no || '',
   });
 
@@ -373,10 +448,11 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
       password: '',
       username: user?.username || '',
       designation: user?.designation || '',
-      role: (user?.role || 'viewer') as 'super_admin' | 'editor' | 'viewer',
+      role: (user?.role || 'viewer') as AppUserRole,
       linkedMemberRegNo: user?.linked_member_reg_no || '',
     });
   }, [user]);
+
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -415,13 +491,12 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
           role: formData.role,
           linked_member_reg_no: formData.linkedMemberRegNo || null,
         });
-        setSuccessMessage('User created successfully! Note: If email confirmation is enabled in Supabase, the user must confirm their email before logging in. See DISABLE_EMAIL_CONFIRMATION.md for details.');
+        setSuccessMessage('User created successfully!');
       }
 
-      // Close modal after a short delay to show success message
       setTimeout(() => {
         onSuccess();
-      }, 2000);
+      }, 1500);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(message || `Failed to ${user ? 'update' : 'create'} user`);
@@ -489,7 +564,6 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
                   )}
                 </button>
               </div>
-              {/* Password strength indicator */}
               {formData.password && (() => {
                 const v = validatePassword(formData.password);
                 const colors = { weak: 'bg-red-500', fair: 'bg-amber-500', strong: 'bg-green-500' };
@@ -545,15 +619,16 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  role: e.target.value as 'super_admin' | 'editor' | 'viewer',
+                  role: e.target.value as AppUserRole,
                 })
               }
               required
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="viewer">Viewer (Read-only)</option>
-              <option value="editor">Editor (Can add/edit)</option>
-              <option value="super_admin">Super Admin (Full access)</option>
+              <option value="member">Member (Self-service member portal)</option>
+              <option value="editor">Editor (Can add/edit operations)</option>
+              <option value="super_admin">Super Admin (Full administrative access)</option>
             </select>
           </div>
 
@@ -574,7 +649,7 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
               ))}
             </select>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Link this user account to their member record for point accumulation
+              Link this user account to their member record for point tracking and personal portal access
             </p>
           </div>
 

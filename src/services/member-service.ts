@@ -5,50 +5,93 @@ import type { Member, MemberInsert, MemberUpdate } from '../types/database';
 
 export const memberService = {
   async getAll(): Promise<Member[]> {
-    const { data, error } = await supabase
+    const res = await supabase
       .from('members')
       .select('*')
       .is('deleted_at', null)
       .order('total_points', { ascending: false });
 
-    if (error) throw error;
-    return (data as Member[]) || [];
+    if (res.error) {
+      if (res.error.code === '42703') {
+        const fallback = await supabase
+          .from('members')
+          .select('*')
+          .order('total_points', { ascending: false });
+        if (fallback.error) throw fallback.error;
+        return (fallback.data as Member[]) || [];
+      }
+      throw res.error;
+    }
+    return (res.data as Member[]) || [];
   },
 
   async getByRegNo(regNo: string): Promise<Member | null> {
-    const { data, error } = await supabase
+    const res = await supabase
       .from('members')
       .select('*')
       .ilike('reg_no', regNo)
       .is('deleted_at', null)
       .maybeSingle();
 
-    if (error) throw error;
-    return data as Member | null;
+    if (res.error) {
+      if (res.error.code === '42703') {
+        const fallback = await supabase
+          .from('members')
+          .select('*')
+          .ilike('reg_no', regNo)
+          .maybeSingle();
+        if (fallback.error) throw fallback.error;
+        return fallback.data as Member | null;
+      }
+      throw res.error;
+    }
+    return res.data as Member | null;
   },
 
   async getTopMembers(limit: number = 3): Promise<Member[]> {
-    const { data, error } = await supabase
+    const res = await supabase
       .from('members')
       .select('*')
       .is('deleted_at', null)
       .order('total_points', { ascending: false })
       .limit(limit);
 
-    if (error) throw error;
-    return (data as Member[]) || [];
+    if (res.error) {
+      if (res.error.code === '42703') {
+        const fallback = await supabase
+          .from('members')
+          .select('*')
+          .order('total_points', { ascending: false })
+          .limit(limit);
+        if (fallback.error) throw fallback.error;
+        return (fallback.data as Member[]) || [];
+      }
+      throw res.error;
+    }
+    return (res.data as Member[]) || [];
   },
 
   async getByFaculty(faculty: string): Promise<Member[]> {
-    const { data, error } = await supabase
+    const res = await supabase
       .from('members')
       .select('*')
       .eq('faculty', faculty)
       .is('deleted_at', null)
       .order('total_points', { ascending: false });
 
-    if (error) throw error;
-    return (data as Member[]) || [];
+    if (res.error) {
+      if (res.error.code === '42703') {
+        const fallback = await supabase
+          .from('members')
+          .select('*')
+          .eq('faculty', faculty)
+          .order('total_points', { ascending: false });
+        if (fallback.error) throw fallback.error;
+        return (fallback.data as Member[]) || [];
+      }
+      throw res.error;
+    }
+    return (res.data as Member[]) || [];
   },
 
   async create(member: MemberInsert): Promise<Member> {
@@ -63,7 +106,7 @@ export const memberService = {
   },
 
   async update(regNo: string, updates: MemberUpdate): Promise<Member> {
-    const { data, error } = await db()
+    const res = await db()
       .from('members')
       .update(updates)
       .ilike('reg_no', regNo)
@@ -71,8 +114,20 @@ export const memberService = {
       .select()
       .single();
 
-    if (error) throw error;
-    return data as Member;
+    if (res.error) {
+      if (res.error.code === '42703') {
+        const fallback = await db()
+          .from('members')
+          .update(updates)
+          .ilike('reg_no', regNo)
+          .select()
+          .single();
+        if (fallback.error) throw fallback.error;
+        return fallback.data as Member;
+      }
+      throw res.error;
+    }
+    return res.data as Member;
   },
 
   async uploadPhoto(file: File, oldPhotoUrl?: string | null): Promise<string> {
@@ -117,24 +172,41 @@ export const memberService = {
     const sanitized = sanitizeSearchQuery(query);
     if (!sanitized) return [];
 
-    const { data, error } = await supabase
+    const res = await supabase
       .from('members')
       .select('*')
       .or(`reg_no.ilike.%${sanitized}%,full_name.ilike.%${sanitized}%,name_with_initials.ilike.%${sanitized}%`)
       .is('deleted_at', null)
       .order('total_points', { ascending: false });
 
-    if (error) throw error;
-    return (data as Member[]) || [];
+    if (res.error) {
+      if (res.error.code === '42703') {
+        const fallback = await supabase
+          .from('members')
+          .select('*')
+          .or(`reg_no.ilike.%${sanitized}%,full_name.ilike.%${sanitized}%,name_with_initials.ilike.%${sanitized}%`)
+          .order('total_points', { ascending: false });
+        if (fallback.error) throw fallback.error;
+        return (fallback.data as Member[]) || [];
+      }
+      throw res.error;
+    }
+    return (res.data as Member[]) || [];
   },
 
   async softDelete(regNo: string): Promise<void> {
-    const { error } = await db()
+    const res = await db()
       .from('members')
       .update({ deleted_at: new Date().toISOString() })
       .ilike('reg_no', regNo);
 
-    if (error) throw error;
+    if (res.error) {
+      // If deleted_at doesn't exist yet on DB, fallback to hard delete
+      if (res.error.code === '42703') {
+        return this.purge(regNo);
+      }
+      throw res.error;
+    }
   },
 
   async restore(regNo: string): Promise<void> {
@@ -143,7 +215,7 @@ export const memberService = {
       .update({ deleted_at: null })
       .ilike('reg_no', regNo);
 
-    if (error) throw error;
+    if (error && error.code !== '42703') throw error;
   },
 
   async purge(regNo: string): Promise<void> {

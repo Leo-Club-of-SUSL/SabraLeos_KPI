@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
-import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download, Trash2, Layers } from 'lucide-react';
+import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download, Trash2, Layers, EyeOff, Mail } from 'lucide-react';
 import type { Member, Contribution } from '../types/database';
 import { NewMemberForm } from '../components/NewMemberForm';
 import { EditMemberForm } from '../components/EditMemberForm';
@@ -42,6 +42,7 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
   // Filters
   const [selectedFaculty, setSelectedFaculty] = useState<string>('');
   const [selectedBatch, setSelectedBatch] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
 
   const loadMembers = async () => {
     try {
@@ -105,7 +106,6 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
 
   useEffect(() => {
     loadMembers();
-    // loadMembers reads leaderboardType and selectedMonth from closure — intentional pattern
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderboardType, selectedMonth]);
 
@@ -113,8 +113,9 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
     let result = [...allMembers];
     if (selectedFaculty) result = result.filter(m => m.faculty === selectedFaculty);
     if (selectedBatch) result = result.filter(m => m.batch === selectedBatch);
+    if (selectedStatus) result = result.filter(m => (m.member_status || 'active') === selectedStatus);
     setFilteredMembers(result);
-  }, [allMembers, selectedFaculty, selectedBatch]);
+  }, [allMembers, selectedFaculty, selectedBatch, selectedStatus]);
 
   useEffect(() => {
     if (initialSearch) {
@@ -126,20 +127,18 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSearch, initialAction]);
 
-
-
   const handleMemberCreated = (member: Member) => {
     setShowNewMemberForm(false);
     setSearchResult(member);
     setMemberNotFound(false);
     setSearchQuery(member.reg_no);
-    loadMembers(); // Reload list to include new member
+    loadMembers();
   };
 
   const handleMemberUpdated = (updatedMember: Member) => {
     setShowEditMemberForm(false);
     setSearchResult(updatedMember);
-    loadMembers(); // Reload list to reflect changes
+    loadMembers();
   };
 
   const handleContributionAdded = async () => {
@@ -151,35 +150,33 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
       }
       const memberContributions = await contributionService.getByMember(searchResult.reg_no);
       setContributions(memberContributions);
-      loadMembers(); // Reload list to update points or ensure leaderboard is current
+      loadMembers();
     }
   };
 
   const handleBulkImportSuccess = () => {
-    loadMembers(); // Reload list after bulk import
+    loadMembers();
     if (searchResult) {
       handleSearch(searchResult.reg_no);
     }
   };
 
-
-
   const handleDeleteMember = async () => {
     if (!searchResult) return;
     
-    if (!window.confirm(`Are you sure you want to delete ${searchResult.full_name} COMPLETELY? This action cannot be undone and will delete ALL their contribution history (points).`)) {
+    if (!window.confirm(`Are you sure you want to delete ${searchResult.full_name}?`)) {
       return;
     }
 
     try {
       setLoading(true);
-      await memberService.delete(searchResult.reg_no);
+      await memberService.softDelete(searchResult.reg_no);
       setSearchResult(null);
       setSearchQuery('');
       loadMembers();
     } catch (error) {
       console.error('Delete error:', error);
-      alert('Failed to delete member completely. You may not have sufficient permissions.');
+      alert('Failed to delete member. You may not have sufficient permissions.');
     } finally {
       setLoading(false);
     }
@@ -189,7 +186,6 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
     setSearchResult(member);
     setSearchQuery(member.reg_no);
     setMemberNotFound(false);
-    // Fetch contributions for the selected member
     contributionService.getByMember(member.reg_no).then(setContributions);
   };
 
@@ -211,24 +207,20 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
           </div>
           {canEdit && (
             <div className="flex gap-3">
-              {canEdit && (
-                <button
-                  onClick={() => setShowBulkProjectContribution(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
-                >
-                  <Layers className="w-5 h-5" />
-                  Add Project Points
-                </button>
-              )}
-              {canEdit && (
-                <button
-                  onClick={() => setShowBulkImport(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
-                >
-                  <FileDown className="w-5 h-5" />
-                  Bulk Import
-                </button>
-              )}
+              <button
+                onClick={() => setShowBulkProjectContribution(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
+              >
+                <Layers className="w-5 h-5" />
+                Add Project Points
+              </button>
+              <button
+                onClick={() => setShowBulkImport(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
+              >
+                <FileDown className="w-5 h-5" />
+                Bulk Import
+              </button>
             </div>
           )}
         </div>
@@ -298,7 +290,6 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
       {searchResult && !loading ? (
         <div className="glass-panel rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-gradient-to-r from-maroon-600 to-maroon-700 p-6 relative overflow-hidden">
-            {/* Background pattern for card */}
             <div className="absolute inset-0 opacity-10 bg-[url('/images/pattern.png')] bg-repeat mix-blend-overlay"></div>
 
             <div className="relative z-10 flex items-center gap-4">
@@ -317,7 +308,6 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                     crossOrigin="anonymous"
                     className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
                     onError={(e) => {
-                      // Hide broken image and show initials fallback
                       const target = e.currentTarget;
                       target.style.display = 'none';
                       const parent = target.parentElement;
@@ -345,9 +335,23 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                 </div>
               )}
               <div className="flex-1">
-                <h2 className="text-3xl font-bold text-white tracking-tight">
-                  {searchResult.name_with_initials}
-                </h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-3xl font-bold text-white tracking-tight">
+                    {searchResult.name_with_initials}
+                  </h2>
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                    searchResult.member_status === 'alumni'
+                      ? 'bg-purple-200 text-purple-900 border border-purple-300'
+                      : 'bg-emerald-200 text-emerald-900 border border-emerald-300'
+                  }`}>
+                    {searchResult.member_status === 'alumni' ? 'Alumni' : 'Active'}
+                  </span>
+                  {searchResult.leaderboard_opt_out && (
+                    <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full text-xs font-semibold flex items-center gap-1">
+                      <EyeOff className="w-3 h-3" /> Opted Out
+                    </span>
+                  )}
+                </div>
                 <p className="text-maroon-100 text-lg mt-1 font-medium">
                   {searchResult.full_name}
                 </p>
@@ -390,14 +394,27 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Faculty</p>
                     <p className="font-semibold text-gray-900 dark:text-white text-lg">{searchResult.faculty}</p>
                   </div>
-                  <div className="col-span-2">
+                  <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">WhatsApp</p>
                     <p className="font-semibold text-gray-900 dark:text-white text-lg">{searchResult.whatsapp}</p>
                   </div>
+                  {searchResult.email && (
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                        <Mail className="w-3.5 h-3.5" /> Email
+                      </p>
+                      <p className="font-semibold text-gray-900 dark:text-white text-lg">{searchResult.email}</p>
+                    </div>
+                  )}
                   {searchResult.my_lci_num && (
                     <div className="col-span-2">
                       <p className="text-sm text-gray-500 dark:text-gray-400">MyLCI Number</p>
                       <p className="font-semibold text-gray-900 dark:text-white text-lg">{searchResult.my_lci_num}</p>
+                    </div>
+                  )}
+                  {searchResult.leaderboard_opt_out && (
+                    <div className="col-span-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-300">
+                      Leaderboard alias: <strong>{searchResult.display_alias || 'Anonymous Leo'}</strong>
                     </div>
                   )}
                 </div>
@@ -428,7 +445,7 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                       className="flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/30 rounded-xl font-medium transition-all duration-200"
                     >
                       <Trash2 className="w-5 h-5" />
-                      Delete Member Completely
+                      Delete Member
                     </button>
                   </div>
                 ) : (
@@ -448,7 +465,6 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                   Contribution History <span className="text-gray-400 font-normal ml-2">({contributions.length})</span>
                 </h3>
                 <div className="relative">
-                  {/* Timeline line */}
                   <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-gray-200 dark:bg-gray-700"></div>
 
                   <div className="space-y-6">
@@ -457,7 +473,6 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                         key={contribution.id}
                         className="relative pl-16 group"
                       >
-                        {/* Timeline dot */}
                         <div className="absolute left-4 top-4 w-4 h-4 rounded-full bg-white dark:bg-dark-bg border-4 border-maroon-600 z-10"></div>
 
                         <div className="p-5 bg-white dark:bg-dark-surface rounded-xl border border-gray-200 dark:border-white/10 hover:border-maroon-200 dark:hover:border-maroon-500/30 transition-all hover:shadow-md">
@@ -532,9 +547,9 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                 </div>
               </div>
 
-              <div className="flex flex-col md:flex-row gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 {leaderboardType === 'monthly' && (
-                  <div className="flex-none">
+                  <div>
                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
                       Month
                     </label>
@@ -542,14 +557,14 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                       type="month"
                       value={selectedMonth}
                       onChange={(e) => setSelectedMonth(e.target.value)}
-                      className="w-full md:w-auto px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-maroon-500 outline-none"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-maroon-500 outline-none"
                     />
                   </div>
                 )}
 
-                <div className="flex-1 min-w-[200px]">
+                <div>
                   <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
-                    Filter by Faculty
+                    Faculty
                   </label>
                   <select
                     value={selectedFaculty}
@@ -563,9 +578,9 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                   </select>
                 </div>
 
-                <div className="flex-1 min-w-[150px]">
+                <div>
                   <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
-                    Filter by Batch
+                    Batch
                   </label>
                   <select
                     value={selectedBatch}
@@ -579,16 +594,32 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                   </select>
                 </div>
 
-                {(selectedFaculty || selectedBatch) && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-maroon-500 outline-none"
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="active">Active Members</option>
+                    <option value="alumni">Alumni</option>
+                  </select>
+                </div>
+
+                {(selectedFaculty || selectedBatch || selectedStatus) && (
                   <div className="flex items-end">
                     <button
                       onClick={() => {
                         setSelectedFaculty('');
                         setSelectedBatch('');
+                        setSelectedStatus('');
                       }}
                       className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 underline"
                     >
-                      Clear
+                      Clear Filters
                     </button>
                   </div>
                 )}
@@ -616,6 +647,7 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                       <th className="px-6 py-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Member</th>
                       <th className="px-6 py-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">Reg No</th>
                       <th className="px-6 py-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">Faculty / Batch</th>
+                      <th className="px-6 py-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center">Status</th>
                       <th className="px-6 py-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Points</th>
                       <th className="px-6 py-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24"></th>
                     </tr>
@@ -661,8 +693,15 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                               </div>
                             )}
                             <div>
-                              <div className="font-bold text-gray-900 dark:text-white group-hover:text-maroon-600 dark:group-hover:text-neon-blue transition-colors">
-                                {member.name_with_initials}
+                              <div className="font-bold text-gray-900 dark:text-white group-hover:text-maroon-600 dark:group-hover:text-neon-blue transition-colors flex items-center gap-1.5">
+                                {member.leaderboard_opt_out && member.display_alias ? (
+                                  <>
+                                    <span>{member.display_alias}</span>
+                                    <span className="text-xs text-gray-400 font-normal">({member.name_with_initials})</span>
+                                  </>
+                                ) : (
+                                  member.name_with_initials
+                                )}
                               </div>
                               <div className="text-xs text-gray-500 dark:text-gray-400 lg:hidden">
                                 {member.batch} • {member.faculty.split('of ').pop()}
@@ -678,6 +717,15 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
                             <span className="font-medium">{member.faculty}</span>
                             <span className="text-xs text-gray-400">{member.batch}</span>
                           </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            member.member_status === 'alumni'
+                              ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                          }`}>
+                            {member.member_status === 'alumni' ? 'Alumni' : 'Active'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <span className={`font-black text-lg ${index < 3 ? 'text-maroon-600 dark:text-neon-blue' : 'text-gray-700 dark:text-gray-300'}`}>
@@ -702,7 +750,6 @@ export function Members({ initialSearch, initialAction }: MembersProps) {
         )
       )}
 
-      {/* Forms and Modals remain identical ... just ensuring I don't delete them. */}
       {showNewMemberForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="glass-panel rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
