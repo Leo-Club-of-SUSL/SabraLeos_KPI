@@ -73,8 +73,10 @@ export const userService = {
   ): Promise<AppUser> {
     // Client-side role check (UX only — real check is server-side in the Edge Function)
     const currentUser = await this.getCurrentUser();
-    if (!currentUser || currentUser.role !== 'super_admin') {
-      throw new Error('Unauthorized: Only Super Admins can create users.');
+    const isSuperAdmin = currentUser?.role === 'super_admin';
+    const isEditorCreatingMember = currentUser?.role === 'editor' && userData.role === 'member';
+    if (!currentUser || (!isSuperAdmin && !isEditorCreatingMember)) {
+      throw new Error('Unauthorized: Insufficient permissions to create user.');
     }
 
     const { data, error } = await callEdgeFunction('admin-create-user', {
@@ -129,6 +131,27 @@ export const userService = {
   async delete(userId: string): Promise<void> {
     const { error } = await callEdgeFunction('admin-delete-user', { user_id: userId });
     if (error) throw new Error(error);
+  },
+
+  /**
+   * Admin sets or resets another user's password directly via Edge Function.
+   */
+  async updateUserPassword(userId: string, newPassword: string): Promise<void> {
+    const { error } = await callEdgeFunction('admin-update-user-password', {
+      user_id: userId,
+      password: newPassword,
+    });
+    if (error) throw new Error(error);
+  },
+
+  /**
+   * Any authenticated user changes their own password.
+   */
+  async changeOwnPassword(newPassword: string): Promise<void> {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
   },
 
   /**

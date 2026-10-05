@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { userService } from '../services/user-service';
 import { memberService } from '../services/member-service';
-import { UserPlus, Shield, Edit as EditIcon, Eye, EyeOff, Loader2, X, Trash2, Settings, Users as UsersIcon, ListTree, UserCheck, UserX, User } from 'lucide-react';
+import { UserPlus, Shield, Edit as EditIcon, Eye, EyeOff, Loader2, X, Trash2, Settings, Users as UsersIcon, ListTree, UserCheck, UserX, User, KeyRound, RefreshCw } from 'lucide-react';
 import { SystemDataManagement } from '../components/SystemDataManagement';
 import { SystemLogs } from '../components/SystemLogs';
 import type { AppUser, Member, AppUserRole } from '../types/database';
@@ -333,6 +333,18 @@ export function UserManagement() {
                             )}
                           </button>
 
+                          {/* Reset Password button */}
+                          <button
+                            onClick={() => {
+                              setEditingUser(user);
+                              setShowCreateForm(true);
+                            }}
+                            className="text-amber-600 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300 p-2 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                            title="Reset Password / Edit User"
+                          >
+                            <KeyRound className="w-5 h-5" />
+                          </button>
+
                           <button
                             onClick={() => {
                               setEditingUser(user);
@@ -458,13 +470,24 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*';
+    let pwd = 'Leo@';
+    for (let i = 0; i < 8; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    pwd += '#2024';
+    setFormData(prev => ({ ...prev, password: pwd }));
+    setShowPassword(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccessMessage('');
 
-    // Validate password on create
-    if (!user) {
+    // Validate password on create, or if filled during edit
+    if (!user || formData.password.trim()) {
       const passwordCheck = validatePassword(formData.password);
       if (!passwordCheck.isValid) {
         setError('Password requirements: ' + passwordCheck.errors.join(', '));
@@ -476,6 +499,11 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
 
     try {
       if (user) {
+        // If password was provided during edit, update auth password via Edge Function
+        if (formData.password.trim()) {
+          await userService.updateUserPassword(user.id, formData.password.trim());
+        }
+
         await userService.update(user.id, {
           username: formData.username,
           designation: formData.designation,
@@ -510,7 +538,7 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-            {user ? 'Edit User' : 'Create New User'}
+            {user ? 'Edit User / Reset Password' : 'Create New User'}
           </h2>
           <button
             onClick={onCancel}
@@ -537,50 +565,58 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
             </div>
           )}
 
-          {!user && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Password <span className="text-red-500">*</span>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {user ? 'Set New Password (Optional)' : <span>Password <span className="text-red-500">*</span></span>}
               </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                  minLength={8}
-                  placeholder="Min 8 chars, uppercase, number, special"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-              {formData.password && (() => {
-                const v = validatePassword(formData.password);
-                const colors = { weak: 'bg-red-500', fair: 'bg-amber-500', strong: 'bg-green-500' };
-                const widths = { weak: 'w-1/3', fair: 'w-2/3', strong: 'w-full' };
-                return (
-                  <div className="mt-2">
-                    <div className="h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                      <div className={`h-full ${colors[v.strength]} ${widths[v.strength]} transition-all duration-300 rounded-full`} />
-                    </div>
-                    <p className={`text-xs mt-1 font-medium ${v.isValid ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
-                      {v.isValid ? `✓ Strong enough (${v.strength})` : v.errors.join(' • ')}
-                    </p>
-                  </div>
-                );
-              })()}
+              <button
+                type="button"
+                onClick={generateRandomPassword}
+                className="text-xs text-maroon-600 dark:text-maroon-400 hover:underline flex items-center gap-1 font-medium"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Generate Strong Password
+              </button>
             </div>
-          )}
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required={!user}
+                minLength={8}
+                placeholder={user ? "Leave blank to keep existing password" : "Min 8 chars, uppercase, number, special"}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none"
+              >
+                {showPassword ? (
+                  <EyeOff className="w-5 h-5" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+            {formData.password && (() => {
+              const v = validatePassword(formData.password);
+              const colors = { weak: 'bg-red-500', fair: 'bg-amber-500', strong: 'bg-green-500' };
+              const widths = { weak: 'w-1/3', fair: 'w-2/3', strong: 'w-full' };
+              return (
+                <div className="mt-2">
+                  <div className="h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                    <div className={`h-full ${colors[v.strength]} ${widths[v.strength]} transition-all duration-300 rounded-full`} />
+                  </div>
+                  <p className={`text-xs mt-1 font-medium ${v.isValid ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                    {v.isValid ? `✓ Strong enough (${v.strength})` : v.errors.join(' • ')}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

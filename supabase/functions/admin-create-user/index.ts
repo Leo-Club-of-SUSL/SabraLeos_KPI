@@ -44,13 +44,21 @@ Deno.serve(async (req: Request) => {
       .eq('id', callerAuth.id)
       .single();
 
-    if (profileError || !callerProfile || callerProfile.role !== 'super_admin' || callerProfile.status !== 'active') {
-      return errorResponse('Forbidden: super_admin role required', 403);
+    if (profileError || !callerProfile || callerProfile.status !== 'active') {
+      return errorResponse('Forbidden: active account required', 403);
     }
 
     // 2. Validate input
     const body = await req.json();
     const { email, password, username, designation, role, linked_member_reg_no } = body;
+
+    // Allow super_admin to create any user role; allow editor to create member portal accounts
+    const isSuperAdmin = callerProfile.role === 'super_admin';
+    const isEditorCreatingMember = callerProfile.role === 'editor' && role === 'member';
+
+    if (!isSuperAdmin && !isEditorCreatingMember) {
+      return errorResponse('Forbidden: super_admin or editor (member role only) required', 403);
+    }
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return errorResponse('Invalid email', 400);

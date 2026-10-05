@@ -20,28 +20,14 @@ CREATE POLICY "Allow authenticated users to read system settings"
     TO authenticated
     USING (true);
 
--- Policy: Only super_admin can insert/update system settings
+-- Policy: Only super_admin can insert/update/delete system settings
 DROP POLICY IF EXISTS "Allow super_admin to manage system settings" ON public.system_settings;
 CREATE POLICY "Allow super_admin to manage system settings"
     ON public.system_settings
     FOR ALL
     TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.app_users
-            WHERE app_users.auth_id = auth.uid()
-            AND app_users.role = 'super_admin'
-            AND app_users.status = 'active'
-        )
-    )
-    WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM public.app_users
-            WHERE app_users.auth_id = auth.uid()
-            AND app_users.role = 'super_admin'
-            AND app_users.status = 'active'
-        )
-    );
+    USING (public.is_super_admin())
+    WITH CHECK (public.is_super_admin());
 
 -- Seed default tier thresholds
 INSERT INTO public.system_settings (key, value)
