@@ -85,7 +85,15 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     if (!formData.batch) errors.batch = 'Batch selection is required';
     if (!formData.faculty) errors.faculty = 'Faculty selection is required';
     if (!validatePhoneNumber(formData.whatsapp)) errors.whatsapp = 'Invalid phone number format';
-    if (formData.email && !formData.email.includes('@')) errors.email = 'Invalid email address';
+    if (createAccount) {
+      if (!formData.email) {
+        errors.email = 'Email address is required to create a member portal login account';
+      }
+      const pwdValidation = validatePassword(accountPassword);
+      if (!pwdValidation.isValid) {
+        errors.password = 'Password: ' + pwdValidation.errors.join(', ');
+      }
+    }
     
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -123,7 +131,7 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
         photo_url: photoUrl,
       });
 
-      // Optionally create portal login account if email is provided
+      // Create portal login account if requested
       if (formData.email && createAccount && accountPassword) {
         try {
           await userService.create(formData.email, {
@@ -134,7 +142,8 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
             password: accountPassword,
           });
         } catch (accountErr) {
-          console.warn('Member created successfully, but portal login account creation failed:', accountErr);
+          console.warn('Member created successfully, but portal login account creation encountered an issue:', accountErr);
+          alert(`Member was registered successfully, but login account creation note: ${accountErr instanceof Error ? accountErr.message : 'Check user management'}`);
         }
       }
 
@@ -325,33 +334,39 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
         </div>
 
         {/* Member Portal Login Account Section */}
-        {formData.email && (
-          <div className="md:col-span-2 p-5 rounded-xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <KeyRound className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
-                <div>
-                  <span className="font-bold text-gray-900 dark:text-white text-sm">
-                    Create Member Login Account
-                  </span>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    Allows this member to log into their portal with their email and an assigned password
-                  </p>
-                </div>
+        <div className="md:col-span-2 p-5 rounded-xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <KeyRound className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
+              <div>
+                <span className="font-bold text-gray-900 dark:text-white text-sm">
+                  Create Member Portal Login Account
+                </span>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Allows this member to log into their member portal with their email and an assigned password
+                </p>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={createAccount}
-                  onChange={(e) => setCreateAccount(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-maroon-600"></div>
-              </label>
             </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={createAccount}
+                onChange={(e) => setCreateAccount(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-maroon-600"></div>
+            </label>
+          </div>
 
-            {createAccount && (
-              <div className="pt-2 border-t border-maroon-200/60 dark:border-maroon-800/60 space-y-2">
+          {createAccount && (
+            <div className="pt-2 border-t border-maroon-200/60 dark:border-maroon-800/60 space-y-3">
+              {!formData.email && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                  <span>ℹ️ Please enter the member's <strong>Email Address</strong> above to associate this portal account.</span>
+                </div>
+              )}
+
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                     Assigned Initial Password <span className="text-red-500">*</span>
@@ -387,18 +402,22 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
                   </button>
                 </div>
 
+                {fieldErrors.password && (
+                  <p className="text-xs text-red-500">{fieldErrors.password}</p>
+                )}
+
                 {accountPassword && (() => {
                   const v = validatePassword(accountPassword);
                   return (
                     <p className={`text-[11px] ${v.isValid ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-500'}`}>
-                      {v.isValid ? '✓ Valid password (member can change this after logging in)' : v.errors.join(' • ')}
+                      {v.isValid ? '✓ Valid password (member can change their own password after logging in)' : v.errors.join(' • ')}
                     </p>
                   );
                 })()}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
         {/* Leaderboard Privacy Section */}
         <div className="md:col-span-2 p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 space-y-3">

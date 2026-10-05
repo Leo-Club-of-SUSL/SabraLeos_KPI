@@ -101,7 +101,26 @@ export const memberService = {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === '42703') {
+        // Fallback for when newer columns (email, member_status, etc.) are not yet in the DB
+        const { email, member_status, leaderboard_opt_out, display_alias, ...legacyMember } = member as Record<string, unknown>;
+        const fallback = await db()
+          .from('members')
+          .insert({ ...(legacyMember as unknown as MemberInsert), reg_no: member.reg_no.toUpperCase() })
+          .select()
+          .single();
+        if (fallback.error) throw fallback.error;
+        return {
+          ...fallback.data,
+          email: (email as string) ?? null,
+          member_status: (member_status as string) ?? 'active',
+          leaderboard_opt_out: (leaderboard_opt_out as boolean) ?? false,
+          display_alias: (display_alias as string) ?? null,
+        } as Member;
+      }
+      throw error;
+    }
     return data as Member;
   },
 
@@ -116,14 +135,35 @@ export const memberService = {
 
     if (res.error) {
       if (res.error.code === '42703') {
-        const fallback = await db()
+        // If 42703 occurs, try without deleted_at first
+        const retryWithAllUpdates = await db()
           .from('members')
           .update(updates)
           .ilike('reg_no', regNo)
           .select()
           .single();
+
+        if (!retryWithAllUpdates.error) {
+          return retryWithAllUpdates.data as Member;
+        }
+
+        // If still 42703, strip the newer columns that may be missing in remote schema
+        const { email, member_status, leaderboard_opt_out, display_alias, deleted_at, ...legacyUpdates } = updates as Record<string, unknown>;
+        const fallback = await db()
+          .from('members')
+          .update(legacyUpdates as unknown as MemberUpdate)
+          .ilike('reg_no', regNo)
+          .select()
+          .single();
+
         if (fallback.error) throw fallback.error;
-        return fallback.data as Member;
+        return {
+          ...fallback.data,
+          email: (email as string) ?? null,
+          member_status: (member_status as string) ?? 'active',
+          leaderboard_opt_out: (leaderboard_opt_out as boolean) ?? false,
+          display_alias: (display_alias as string) ?? null,
+        } as Member;
       }
       throw res.error;
     }

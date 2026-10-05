@@ -57,6 +57,17 @@ export const userService = {
     return (data as AppUser[]) || [];
   },
 
+  async getByLinkedMember(regNo: string): Promise<AppUser | null> {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('linked_member_reg_no', regNo)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data as AppUser | null;
+  },
+
   /**
    * Create a new user account via Edge Function (server-side, uses service role key).
    * Sends an invite email; the user sets their password via the invite link.
