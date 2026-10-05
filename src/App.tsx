@@ -25,7 +25,13 @@ function AppContent() {
       setDbInitialized(initialized);
 
       if (initialized) {
-        // await seedMockData();
+        // Load custom tier thresholds from system settings / cache
+        try {
+          const { systemService } = await import('./services/system-service');
+          await systemService.getTierThresholds();
+        } catch (e) {
+          console.warn('Could not load tier thresholds on init:', e);
+        }
       }
 
       setDbLoading(false);
@@ -88,6 +94,7 @@ function AppContent() {
           <Members
             initialSearch={(pageData as { search?: string })?.search}
             initialAction={(pageData as { action?: string })?.action}
+            initialTier={(pageData as { tier?: string })?.tier}
           />
         )}
         {currentPage === 'reports' && <Reports />}

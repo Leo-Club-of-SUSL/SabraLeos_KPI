@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { systemService } from '../services/system-service';
 import { Plus, Trash2, Edit2, Check, X, GraduationCap, Calendar, FolderTree } from 'lucide-react';
 import type { Faculty, Batch, Avenue } from '../types/database';
+import { TierSettingsManagement } from './TierSettingsManagement';
 
 export function SystemDataManagement() {
   const [faculties, setFaculties] = useState<Faculty[]>([]);
@@ -163,6 +164,9 @@ export function SystemDataManagement() {
           {error}
         </div>
       )}
+
+      {/* Member Standing Tier Thresholds Configuration */}
+      <TierSettingsManagement />
 
       {/* Faculties Section */}
       <div className="glass-panel rounded-2xl overflow-hidden">

@@ -3,6 +3,9 @@ import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
 import { Trophy, Award, TrendingUp, Search, Plus } from 'lucide-react';
 import type { Member } from '../types/database';
+import { TierBadge } from '../components/TierBadge';
+import { TierOverviewCard } from '../components/TierOverviewCard';
+import { getTier, TIERS_CONFIG } from '../lib/tier-calculator';
 
 interface DashboardProps {
   onNavigate?: (page: string, data?: unknown) => void;
@@ -14,8 +17,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [monthlyProjects, setMonthlyProjects] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-
   const [memberCount, setMemberCount] = useState(0);
+  const [tierDistribution, setTierDistribution] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadDashboardData();
@@ -23,17 +26,24 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const loadDashboardData = async () => {
     try {
-      const [members, points, projects, count] = await Promise.all([
+      const [members, points, projects, all] = await Promise.all([
         memberService.getTopMembers(3),
         contributionService.getTotalPoints(),
         contributionService.getMonthlyStats(new Date().getFullYear(), new Date().getMonth() + 1),
-        memberService.getAll().then(m => m.length)
+        memberService.getAll(),
       ]);
 
       setTopMembers(members);
       setTotalPoints(points);
       setMonthlyProjects(projects);
-      setMemberCount(count);
+      setMemberCount(all.length);
+
+      const distribution = all.reduce((acc, m) => {
+        const t = getTier(m.total_points).key;
+        acc[t] = (acc[t] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      setTierDistribution(distribution);
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -69,7 +79,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             Dashboard
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Welcome back! Here's your overview
+            Welcome back! Here's your club performance overview
           </p>
         </div>
 
@@ -125,8 +135,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 {memberCount}
               </p>
             </div>
-            <div className="w-12 h-12 bg-gold-100 dark:bg-yellow-500/20 rounded-lg flex items-center justify-center">
-              <Trophy className="w-6 h-6 text-gold-600 dark:text-yellow-400" />
+            <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-500/20 rounded-lg flex items-center justify-center">
+              <Trophy className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
             </div>
           </div>
         </div>
@@ -155,12 +165,23 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
       </div>
 
+      {/* Top Contributors */}
       <div className="glass-panel rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Trophy className="w-6 h-6 text-gold-600 dark:text-yellow-400" />
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-            Top Contributors
-          </h2>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Trophy className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Top Contributors
+            </h2>
+          </div>
+          {onNavigate && (
+            <button
+              onClick={() => onNavigate('members')}
+              className="text-xs font-bold text-maroon-600 dark:text-neon-blue hover:underline uppercase tracking-wider"
+            >
+              View Full Leaderboard →
+            </button>
+          )}
         </div>
 
         {topMembers.length === 0 ? (
@@ -172,7 +193,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             {topMembers.map((member, index) => (
               <div
                 key={member.reg_no}
-                className="flex items-center gap-4 p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors duration-200 border border-transparent hover:border-gray-200 dark:hover:border-white/10"
+                className="flex items-center gap-4 p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-colors duration-200 border border-transparent hover:border-gray-200 dark:hover:border-white/10"
               >
                 <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-lg ${
                   index === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' : 
@@ -199,9 +220,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 dark:text-white truncate">
-                    {member.name_with_initials}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900 dark:text-white truncate">
+                      {member.name_with_initials}
+                    </p>
+                    <TierBadge points={member.total_points} size="xs" />
+                  </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     {member.reg_no} • {member.faculty}
                   </p>
@@ -218,6 +242,60 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </div>
         )}
       </div>
+
+      {/* Member Standings Category Breakdown */}
+      <div className="glass-panel rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+              Member Standings & Recognition
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Current distribution across club standing tiers. Click any category to view members.
+            </p>
+          </div>
+          {onNavigate && (
+            <button
+              onClick={() => onNavigate('members')}
+              className="text-xs font-bold text-maroon-600 dark:text-neon-blue hover:underline uppercase tracking-wider"
+            >
+              All Members →
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {(['platinum', 'gold', 'silver', 'bronze', 'official', 'prospect'] as const).map((tKey) => {
+            const t = TIERS_CONFIG[tKey];
+            const count = tierDistribution[tKey] || 0;
+            return (
+              <button
+                key={tKey}
+                onClick={() => onNavigate && onNavigate('members', { tier: tKey })}
+                className="p-3.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-dark-surface/80 hover:border-maroon-400 dark:hover:border-neon-blue hover:shadow-md transition-all duration-200 text-left flex flex-col justify-between group"
+              >
+                <div className="flex items-center justify-between w-full mb-1">
+                  <span className="text-xs font-bold text-gray-800 dark:text-gray-200 group-hover:text-maroon-600 dark:group-hover:text-neon-blue truncate">
+                    {t.shortName}
+                  </span>
+                  <TierBadge tierKey={tKey} size="xs" showIcon={false} />
+                </div>
+                <div className="flex items-baseline justify-between mt-2">
+                  <span className="text-2xl font-black text-gray-900 dark:text-white">
+                    {count}
+                  </span>
+                  <span className="text-[11px] font-mono text-gray-500 dark:text-gray-400">
+                    {t.minPoints}+ pts
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Member Standings Guide & Recognition Categories */}
+      <TierOverviewCard />
     </div>
   );
 }

@@ -71,6 +71,12 @@ export type Database = {
         Update: Record<string, never>;
         Relationships: [];
       };
+      system_settings: {
+        Row: SystemSetting;
+        Insert: SystemSettingInsert;
+        Update: SystemSettingUpdate;
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -298,3 +304,28 @@ export type SystemLogInsert = {
   entity_type?: string | null;
   entity_id?: string | null;
 };
+
+// ============================================================
+// System Settings
+// ============================================================
+export type SystemSetting = {
+  key: string;
+  value: Json;
+  updated_at: string;
+  updated_by?: string | null;
+};
+
+export type SystemSettingInsert = {
+  key: string;
+  value: Json;
+  updated_at?: string;
+  updated_by?: string | null;
+};
+
+export type SystemSettingUpdate = {
+  key?: string;
+  value?: Json;
+  updated_at?: string;
+  updated_by?: string | null;
+};
+
