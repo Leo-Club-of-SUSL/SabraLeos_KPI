@@ -45,7 +45,25 @@ export const logService = {
     try {
       const { data, error } = await supabase
         .from('system_logs')
-        .select('id, user_id, user_name, action, entity_type, entity_id, details, old_value, new_value, created_at')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(200);
+
+      if (!error && data && data.length > 0) {
+        return data;
+      }
+      if (!error && data) {
+        // Empty array
+        return data;
+      }
+    } catch {
+      // Try created_at if timestamp ordering fails
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('system_logs')
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(200);
 
