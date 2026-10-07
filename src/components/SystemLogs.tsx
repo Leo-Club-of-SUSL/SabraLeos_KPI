@@ -198,6 +198,16 @@ export function SystemLogs() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    // Log export event server-side
+    void logService.logExport({
+      report: 'System Audit Logs',
+      format: 'csv',
+      count: filteredLogs.length,
+      stream: activeTab,
+      severity_filter: severityFilter,
+      time_filter: timeFilter,
+    });
   };
 
   const getSeverityBadge = (severity: UnifiedLogEntry['severity'], source: UnifiedLogEntry['source']) => {

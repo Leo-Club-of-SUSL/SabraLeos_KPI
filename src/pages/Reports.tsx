@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
 import { systemService } from '../services/system-service';
+import { logService } from '../services/log-service';
 import { Filter, Download, Calendar, Users as UsersIcon, TrendingUp, Award, RefreshCw } from 'lucide-react';
 import type { Member, Contribution, Faculty } from '../types/database';
 import { ExportOptionsModal, type ColumnOption } from '../components/ExportOptionsModal';
@@ -206,6 +207,21 @@ export function Reports() {
 
       doc.save(`nexus-report-${new Date().toISOString().split('T')[0]}.pdf`);
     }
+
+    // Log export event server-side
+    void logService.logExport({
+      report: 'Member Report',
+      format,
+      count: rows.length,
+      columns: selectedColumns,
+      filters: {
+        faculty: filters.faculty || undefined,
+        tier: filters.tier || undefined,
+        startDate: filters.startDate || undefined,
+        endDate: filters.endDate || undefined,
+        minProjects: filters.minProjects || undefined,
+      },
+    });
   };
 
   // Tier counts

@@ -39,39 +39,51 @@ export const logService = {
   },
 
   /**
-   * Read system audit logs. Only super_admin can read (enforced by RLS).
+   * Read system audit logs. Only officers can read (enforced by RLS).
    */
   async getLogs() {
     try {
-      const { data, error } = await supabase
+      // 1. Try ordering by timestamp first (legacy schema)
+      const resTimestamp = await supabase
         .from('system_logs')
         .select('*')
         .order('timestamp', { ascending: false })
         .limit(200);
 
-      if (!error && data && data.length > 0) {
-        return data;
-      }
-      if (!error && data) {
-        // Empty array
-        return data;
+      if (!resTimestamp.error && resTimestamp.data) {
+        return resTimestamp.data;
       }
     } catch {
-      // Try created_at if timestamp ordering fails
+      // Fallback
     }
 
     try {
-      const { data, error } = await supabase
+      // 2. Try ordering by created_at (newer schema)
+      const resCreatedAt = await supabase
         .from('system_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(200);
 
-      if (error) {
-        console.warn('System logs fetch warning:', error.message);
+      if (!resCreatedAt.error && resCreatedAt.data) {
+        return resCreatedAt.data;
+      }
+    } catch {
+      // Fallback
+    }
+
+    try {
+      // 3. Fallback to unordered query
+      const resFallback = await supabase
+        .from('system_logs')
+        .select('*')
+        .limit(200);
+
+      if (resFallback.error) {
+        console.warn('System logs fetch warning:', resFallback.error.message);
         return [];
       }
-      return data || [];
+      return resFallback.data || [];
     } catch {
       return [];
     }
@@ -79,21 +91,34 @@ export const logService = {
 
   /**
    * Read security events (auth anomalies, threats, password/MFA resets, status changes).
-   * Only super_admin can read (enforced by RLS).
+   * Only officers can read (enforced by RLS).
    */
   async getSecurityEvents() {
     try {
-      const { data, error } = await supabase
+      const res1 = await supabase
         .from('security_events')
         .select('id, event_type, user_id, actor_id, ip_address, details, created_at')
         .order('created_at', { ascending: false })
         .limit(200);
 
-      if (error) {
-        console.warn('Security events fetch warning:', error.message);
+      if (!res1.error && res1.data) {
+        return res1.data;
+      }
+    } catch {
+      // Fallback
+    }
+
+    try {
+      const res2 = await supabase
+        .from('security_events')
+        .select('*')
+        .limit(200);
+
+      if (res2.error) {
+        console.warn('Security events fetch warning:', res2.error.message);
         return [];
       }
-      return data || [];
+      return res2.data || [];
     } catch {
       return [];
     }
@@ -105,11 +130,14 @@ export const logService = {
   async logSecurityEvent(eventType: string, details?: Record<string, unknown>, targetUserId?: string): Promise<void> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)('log_security_event', {
+      const { error } = await (supabase.rpc as any)('log_security_event', {
         p_event_type: eventType,
         p_target_user_id: targetUserId || null,
         p_details: details || {},
       });
+      if (error) {
+        console.warn('Security event log failed (non-fatal):', error.message);
+      }
     } catch (err) {
       console.warn('Security event logging non-fatal error:', err);
     }

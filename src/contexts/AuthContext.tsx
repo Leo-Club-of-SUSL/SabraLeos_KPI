@@ -34,6 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     try {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (user) {
+        void logService.logSecurityEvent('LOGOUT', { user_id: user.id, username: appUser?.username }, user.id);
+      }
       systemService.clearStaticCache();
       await supabase.auth.signOut();
     } catch (err) {
@@ -45,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAppUser(null);
       setLoading(false);
     }
-  }, []);
+  }, [user, appUser]);
 
   const loadUserContext = useCallback(async (targetUser: User | null, forceReload = false) => {
     if (!targetUser) {

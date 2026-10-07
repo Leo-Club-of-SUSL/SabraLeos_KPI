@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { userService } from '../services/user-service';
 import { memberService } from '../services/member-service';
 import { systemService, type SecurityAlert } from '../services/system-service';
+import { logService } from '../services/log-service';
 import { 
   UserPlus, Shield, Edit as EditIcon, Eye, Loader2, X, Trash2, 
   Settings, Users as UsersIcon, ListTree, UserCheck, UserX, 
@@ -83,6 +84,11 @@ export function UserManagement() {
     try {
       setActionLoadingId(user.id);
       await userService.setStatus(user.id, action);
+      void logService.logSecurityEvent(
+        action === 'suspend' ? 'USER_SUSPENDED' : 'USER_REACTIVATED',
+        { target_user_id: user.id, username: user.username, designation: user.designation, role: user.role },
+        user.id
+      );
       setActionMessage({ type: 'success', text: `User successfully ${action}ed.` });
       await loadData();
     } catch (error) {
@@ -100,6 +106,11 @@ export function UserManagement() {
     try {
       setActionLoadingId(user.id);
       await userService.resetMfa(user.id);
+      void logService.logSecurityEvent(
+        'MFA_RESET_ADMIN',
+        { target_user_id: user.id, username: user.username, role: user.role },
+        user.id
+      );
       setActionMessage({ type: 'success', text: `MFA factors reset for ${user.username}.` });
       await loadData();
     } catch (err) {
@@ -125,6 +136,11 @@ export function UserManagement() {
     try {
       setActionLoadingId(userId);
       await userService.delete(userId);
+      void logService.logSecurityEvent(
+        'USER_DELETED',
+        { target_user_id: userId, username, role: userRole },
+        userId
+      );
       setActionMessage({ type: 'success', text: 'User removed.' });
       await loadData();
     } catch (error) {
@@ -663,6 +679,11 @@ function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetP
 
     try {
       await userService.adminSetUserPassword(user.id, newPassword.trim());
+      void logService.logSecurityEvent(
+        'PASSWORD_CHANGED_ADMIN',
+        { target_user_id: user.id, username: user.username, role: user.role },
+        user.id
+      );
       setCredentials({
         email: userEmail,
         password: newPassword.trim(),
@@ -878,9 +899,20 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
           linked_member_reg_no: formData.linkedMemberRegNo || null,
         });
 
+        void logService.logSecurityEvent(
+          'USER_PROFILE_UPDATED',
+          { target_user_id: user.id, username: formData.username, role: formData.role, designation: formData.designation },
+          user.id
+        );
+
         // If password was also filled in when editing
         if (formData.password && formData.password.trim().length >= 6) {
           await userService.adminSetUserPassword(user.id, formData.password.trim());
+          void logService.logSecurityEvent(
+            'PASSWORD_CHANGED_ADMIN',
+            { target_user_id: user.id, username: formData.username, role: formData.role },
+            user.id
+          );
           setCreatedCredentials({
             username: formData.username,
             email: formData.email || user.username,
@@ -905,6 +937,12 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
             linked_member_reg_no: formData.linkedMemberRegNo || null,
           },
           passToUse
+        );
+
+        void logService.logSecurityEvent(
+          'OFFICER_CREATED',
+          { email: formData.email, username: formData.username, role: formData.role, designation: formData.designation },
+          res.user.id
         );
 
         setCreatedCredentials({
