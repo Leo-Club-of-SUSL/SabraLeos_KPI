@@ -5,7 +5,7 @@ import { systemService, type SecurityAlert } from '../services/system-service';
 import { 
   UserPlus, Shield, Edit as EditIcon, Eye, Loader2, X, Trash2, 
   Settings, Users as UsersIcon, ListTree, UserCheck, UserX, 
-  User, Send, ShieldAlert, AlertTriangle, CheckCircle2 
+  User, KeyRound, ShieldAlert, AlertTriangle, CheckCircle2, Copy, Check, RefreshCw, EyeOff, ShieldCheck
 } from 'lucide-react';
 import { SystemDataManagement } from '../components/SystemDataManagement';
 import { SystemLogs } from '../components/SystemLogs';
@@ -19,6 +19,7 @@ export function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const [passwordTargetUser, setPasswordTargetUser] = useState<AppUser | null>(null);
   const [activeTab, setActiveTab] = useState<'users' | 'security' | 'system' | 'logs'>('users');
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [schemaStatus, setSchemaStatus] = useState<{ matches: boolean; current: string | null; expected: string } | null>(null);
@@ -81,29 +82,6 @@ export function UserManagement() {
     } catch (error) {
       console.error(`Error ${action}ing user:`, error);
       setActionMessage({ type: 'error', text: `Failed to ${action} user: ${error instanceof Error ? error.message : 'Unknown error'}` });
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  const handleSendResetEmail = async (user: AppUser) => {
-    const member = members.find(m => m.reg_no === user.linked_member_reg_no);
-    const email = member?.email;
-    if (!email) {
-      const inputEmail = prompt(`Please enter the verified email address for user "${user.username || 'User'}":`);
-      if (!inputEmail || !inputEmail.includes('@')) return;
-      return sendResetToEmail(inputEmail);
-    }
-    return sendResetToEmail(email);
-  };
-
-  const sendResetToEmail = async (email: string) => {
-    try {
-      setActionLoadingId(email);
-      await userService.sendPasswordResetEmail(email);
-      setActionMessage({ type: 'success', text: `Password recovery email sent securely to ${email}.` });
-    } catch (err) {
-      setActionMessage({ type: 'error', text: `Failed to send reset email: ${err instanceof Error ? err.message : 'Service unavailable'}` });
     } finally {
       setActionLoadingId(null);
     }
@@ -280,7 +258,7 @@ export function UserManagement() {
               className="flex items-center gap-2 px-5 py-2.5 bg-maroon-600 hover:bg-maroon-700 text-white rounded-xl font-bold transition-all duration-200 shadow-lg shadow-maroon-600/20 hover:shadow-maroon-600/40 text-sm shrink-0 self-start lg:self-auto"
             >
               <UserPlus className="w-4 h-4" />
-              Invite Officer
+              Create Officer
             </button>
           )}
         </div>
@@ -444,14 +422,13 @@ export function UserManagement() {
 
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end items-center gap-1.5">
-                          {/* Send Reset Email */}
+                          {/* Set Temporary Password Directly */}
                           <button
-                            onClick={() => handleSendResetEmail(user)}
-                            disabled={actionLoadingId === user.id}
+                            onClick={() => setPasswordTargetUser(user)}
                             className="p-1.5 text-maroon-600 hover:text-maroon-900 dark:text-amber-400 dark:hover:text-amber-300 hover:bg-maroon-50 dark:hover:bg-maroon-900/20 rounded-lg transition-colors"
-                            title="Send Password Recovery Email to User"
+                            title="Set Temporary / Mock Password"
                           >
-                            <Send className="w-4 h-4" />
+                            <KeyRound className="w-4 h-4" />
                           </button>
 
                           {/* Reset MFA */}
@@ -491,7 +468,7 @@ export function UserManagement() {
                               setShowCreateForm(true);
                             }}
                             className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-300 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                            title="Edit Role / Designation"
+                            title="Edit Role / Designation / Password"
                           >
                             <EditIcon className="w-4 h-4" />
                           </button>
@@ -522,7 +499,6 @@ export function UserManagement() {
       {/* SECURITY OVERVIEW TAB */}
       {activeTab === 'security' && (
         <div className="space-y-6 animate-in fade-in duration-300">
-          {/* Security Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-5 rounded-3xl glass-panel border border-gray-200/80 dark:border-white/10 shadow-sm">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Privileged Officers</span>
@@ -557,7 +533,6 @@ export function UserManagement() {
             </div>
           </div>
 
-          {/* Security Alerts List */}
           <div className="glass-panel rounded-3xl shadow-lg border border-gray-200/80 dark:border-white/10 p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-red-500" />
@@ -621,6 +596,219 @@ export function UserManagement() {
           }}
         />
       )}
+
+      {passwordTargetUser && (
+        <AdminSetPasswordModal
+          user={passwordTargetUser}
+          members={members}
+          onSuccess={() => {
+            setPasswordTargetUser(null);
+            loadData();
+          }}
+          onCancel={() => setPasswordTargetUser(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface AdminSetPasswordModalProps {
+  user: AppUser;
+  members: Member[];
+  onSuccess: () => void;
+  onCancel: () => void;
+}
+
+function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetPasswordModalProps) {
+  const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const member = members.find(m => m.reg_no === user.linked_member_reg_no);
+  const userEmail = member?.email || user.username;
+
+  useEffect(() => {
+    generateRandom();
+  }, []);
+
+  const generateRandom = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let res = 'Leo@';
+    for (let i = 0; i < 8; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewPassword(res);
+  };
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      await userService.adminSetUserPassword(user.id, newPassword.trim());
+      setCredentials({
+        email: userEmail,
+        password: newPassword.trim(),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyCredentials = () => {
+    if (!credentials) return;
+    const text = `Leo Club SUSL - Account Login Credentials\n\nUser: ${user.username} (${user.role})\nLogin Email/Username: ${credentials.email}\nTemporary Password: ${credentials.password}\n\nLogin URL: ${window.location.origin}\n* Please change your password after logging into your account.`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="bg-gradient-to-r from-maroon-600 to-maroon-800 p-5 flex items-center justify-between text-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shadow-md">
+              <KeyRound className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg leading-tight">Set Temporary Password</h3>
+              <p className="text-xs text-maroon-100">Manual credential distribution for @{user.username}</p>
+            </div>
+          </div>
+          <button onClick={onCancel} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {credentials ? (
+          <div className="p-6 text-center space-y-6">
+            <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            <div>
+              <h4 className="text-lg font-bold text-gray-900 dark:text-white">Password Updated!</h4>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                Hand these credentials over manually to the user.
+              </p>
+            </div>
+
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-left space-y-2 font-mono text-xs">
+              <div>
+                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">User</span>
+                <span className="text-gray-900 dark:text-white font-bold">{user.username} ({user.role})</span>
+              </div>
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Login Email / Identifier</span>
+                <span className="text-gray-900 dark:text-white select-all">{credentials.email}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">New Temporary Password</span>
+                <span className="text-maroon-600 dark:text-neon-blue font-bold select-all">{credentials.password}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={copyCredentials}
+                className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copied!' : 'Copy Credentials'}
+              </button>
+              <button
+                type="button"
+                onClick={onSuccess}
+                className="flex-1 px-4 py-2.5 bg-maroon-600 hover:bg-maroon-700 text-white font-bold rounded-xl text-xs transition-all shadow-md"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSetPassword} className="p-6 space-y-4">
+            {error && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  New Temporary Password <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={generateRandom}
+                  className="text-[11px] font-bold text-maroon-600 dark:text-neon-blue hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" /> Generate Random
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  placeholder="Min 6 characters"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50/50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-maroon-500 outline-none pr-10 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5">
+                The password will be updated immediately. Give this password to the user manually.
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !newPassword}
+                className="flex-1 px-4 py-2.5 bg-maroon-600 hover:bg-maroon-700 disabled:bg-maroon-400 text-white rounded-xl font-bold transition-all text-sm flex items-center justify-center gap-2 shadow-lg shadow-maroon-600/20"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4" />
+                    Update Password
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
@@ -639,16 +827,38 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
     designation: user?.designation || '',
     role: (user?.role || 'viewer') as AppUserRole,
     linkedMemberRegNo: user?.linked_member_reg_no || '',
+    password: '',
   });
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{
+    username: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    if (!user && !formData.password) {
+      generateRandomPassword();
+    }
+  }, [user]);
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let res = 'Leo@';
+    for (let i = 0; i < 8; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setFormData(prev => ({ ...prev, password: res }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccessMessage('');
     setLoading(true);
 
     try {
@@ -659,24 +869,42 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
           role: formData.role,
           linked_member_reg_no: formData.linkedMemberRegNo || null,
         });
-        setSuccessMessage('User updated successfully!');
-      } else {
-        if (!formData.email) {
-          throw new Error('Email address is required to invite an officer.');
+
+        // If password was also filled in when editing
+        if (formData.password && formData.password.trim().length >= 6) {
+          await userService.adminSetUserPassword(user.id, formData.password.trim());
+          setCreatedCredentials({
+            username: formData.username,
+            email: formData.email || user.username,
+            password: formData.password.trim(),
+          });
+          return;
         }
 
-        await userService.create(formData.email, {
-          username: formData.username,
-          designation: formData.designation,
-          role: formData.role,
-          linked_member_reg_no: formData.linkedMemberRegNo || null,
-        });
-        setSuccessMessage('Invitation link sent to user email!');
-      }
-
-      setTimeout(() => {
         onSuccess();
-      }, 1200);
+      } else {
+        if (!formData.email) {
+          throw new Error('Email address is required to create an officer account.');
+        }
+
+        const passToUse = formData.password || `Leo@${formData.username.replace(/[^a-zA-Z0-9]/g, '') || 'Officer'}2026!`;
+        const res = await userService.createOfficer(
+          formData.email,
+          {
+            username: formData.username,
+            designation: formData.designation,
+            role: formData.role as 'super_admin' | 'editor' | 'viewer',
+            linked_member_reg_no: formData.linkedMemberRegNo || null,
+          },
+          passToUse
+        );
+
+        setCreatedCredentials({
+          username: res.user.username,
+          email: formData.email,
+          password: res.temporaryPassword || passToUse,
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(message || `Failed to ${user ? 'update' : 'create'} user`);
@@ -685,12 +913,20 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
     }
   };
 
+  const copyCredentials = () => {
+    if (!createdCredentials) return;
+    const text = `Leo Club SUSL - Officer Account Credentials\n\nUsername: ${createdCredentials.username}\nLogin Email: ${createdCredentials.email}\nTemporary Password: ${createdCredentials.password}\n\nLogin URL: ${window.location.origin}\n* Please change your password after logging in.`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between z-10">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            {user ? 'Edit Officer Account' : 'Invite New Officer'}
+            {user ? 'Edit Officer Account' : 'Create Officer Account'}
           </h2>
           <button
             onClick={onCancel}
@@ -700,130 +936,206 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {!user && (
+        {createdCredentials ? (
+          <div className="p-6 text-center space-y-6">
+            <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <UserCheck className="w-8 h-8" />
+            </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Official Email Address <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
-                placeholder="officer@leoclubsusl.lk"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                A secure setup invitation link will be emailed to this address.
+              <h3 className="text-xl font-black text-gray-900 dark:text-white">
+                Officer Account Ready!
+              </h3>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                Account created without sending emails. Hand over the credentials below manually.
               </p>
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Officer Display Name / Username <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              required
-              placeholder="e.g. kavindu_gunasekara"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Designation <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.designation}
-              onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-              required
-              placeholder="Director - Service Projects"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Assigned Role <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={formData.role}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  role: e.target.value as AppUserRole,
-                })
-              }
-              required
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="viewer">Viewer (Read-only)</option>
-              <option value="editor">Editor (Can add/edit operations & points)</option>
-              <option value="super_admin">Super Admin (Full administrative access & settings)</option>
-              <option value="member">Member (Self-service member portal)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Link to Member (Optional)
-            </label>
-            <select
-              value={formData.linkedMemberRegNo}
-              onChange={(e) => setFormData({ ...formData, linkedMemberRegNo: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="">No linked member</option>
-              {members.map((member) => (
-                <option key={member.reg_no} value={member.reg_no}>
-                  {member.name_with_initials} ({member.reg_no})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {successMessage && (
-            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3 text-sm text-emerald-800 dark:text-emerald-300">
-              {successMessage}
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl text-left space-y-2 font-mono text-xs">
+              <div>
+                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Username</span>
+                <span className="text-gray-900 dark:text-white font-bold">@{createdCredentials.username}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Login Email</span>
+                <span className="text-gray-900 dark:text-white select-all">{createdCredentials.email}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Temporary Password</span>
+                <span className="text-maroon-600 dark:text-neon-blue font-bold select-all">{createdCredentials.password}</span>
+              </div>
             </div>
-          )}
 
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-600 dark:text-red-400">
-              {error}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={copyCredentials}
+                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copied to Clipboard!' : 'Copy Credentials'}
+              </button>
+              <button
+                type="button"
+                onClick={onSuccess}
+                className="flex-1 px-4 py-3 bg-maroon-600 hover:bg-maroon-700 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-maroon-600/20"
+              >
+                Done
+              </button>
             </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 px-4 py-2.5 bg-maroon-600 hover:bg-maroon-700 disabled:bg-maroon-400 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {user ? 'Saving...' : 'Sending Invite...'}
-                </>
-              ) : (
-                user ? 'Save Changes' : 'Send Invite'
-              )}
-            </button>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            {!user && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Official Email Address <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  required
+                  placeholder="officer@leoclubsusl.lk"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                Officer Display Name / Username <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                required
+                placeholder="e.g. kavindu_gunasekara"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                Designation <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.designation}
+                onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                required
+                placeholder="Director - Service Projects"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                Assigned Role <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.role}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    role: e.target.value as AppUserRole,
+                  })
+                }
+                required
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="viewer">Viewer (Read-only)</option>
+                <option value="editor">Editor (Can add/edit operations & points)</option>
+                <option value="super_admin">Super Admin (Full administrative access & settings)</option>
+                <option value="member">Member (Self-service member portal)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                Link to Member (Optional)
+              </label>
+              <select
+                value={formData.linkedMemberRegNo}
+                onChange={(e) => setFormData({ ...formData, linkedMemberRegNo: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">No linked member</option>
+                {members.map((member) => (
+                  <option key={member.reg_no} value={member.reg_no}>
+                    {member.name_with_initials} ({member.reg_no})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Mock / Temporary Password field */}
+            <div className="p-4 bg-maroon-50/60 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                  {user ? 'Set New Temporary Password (Optional)' : 'Temporary / Mock Password'}
+                </label>
+                <button
+                  type="button"
+                  onClick={generateRandomPassword}
+                  className="text-[11px] font-bold text-maroon-600 dark:text-neon-blue hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" /> Generate Random
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder={user ? 'Leave blank to keep existing password' : 'Min 6 characters'}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                You will give these credentials to the officer manually. They can update their password upon login.
+              </p>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-600 dark:text-red-400">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 px-4 py-2.5 bg-maroon-600 hover:bg-maroon-700 disabled:bg-maroon-400 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {user ? 'Saving...' : 'Creating...'}
+                  </>
+                ) : (
+                  user ? 'Save Changes' : 'Create Officer'
+                )}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

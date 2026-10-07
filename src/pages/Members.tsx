@@ -883,11 +883,28 @@ export function Members({ initialSearch, initialAction, initialTier }: MembersPr
       )}
 
       {showEditMemberForm && searchResult && (
-        <EditMemberForm
-          member={searchResult}
-          onSuccess={handleMemberUpdated}
-          onCancel={() => setShowEditMemberForm(false)}
-        />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="glass-panel bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+            <div className="sticky top-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between z-10">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Edit Member Profile & Credentials
+              </h2>
+              <button
+                onClick={() => setShowEditMemberForm(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <EditMemberForm
+                member={searchResult}
+                onSuccess={handleMemberUpdated}
+                onCancel={() => setShowEditMemberForm(false)}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {showAddContribution && searchResult && (

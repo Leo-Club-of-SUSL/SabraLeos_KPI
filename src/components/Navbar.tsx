@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
+import { usePermissions } from '../hooks/usePermissions';
+
 interface NavbarProps {
   currentPage?: string;
   onNavigate?: (page: string) => void;
@@ -22,20 +24,23 @@ interface NavbarProps {
 
 export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
   const { appUser, signOut } = useAuth();
+  const { isMember } = usePermissions();
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   const navigation = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'editor', 'viewer'] },
-    { id: 'members', label: 'Members', icon: Users, roles: ['super_admin', 'editor', 'viewer'] },
-    { id: 'reports', label: 'Reports', icon: FileText, roles: ['super_admin', 'editor', 'viewer'] },
-    { id: 'users', label: 'Settings', icon: UserCog, roles: ['super_admin'] },
+    { id: 'dashboard', label: isMember ? 'My Portal' : 'Dashboard', icon: LayoutDashboard, allowMember: true, allowOfficer: true },
+    { id: 'members', label: 'Members', icon: Users, allowMember: false, allowOfficer: true },
+    { id: 'reports', label: 'Reports', icon: FileText, allowMember: false, allowOfficer: true },
+    { id: 'users', label: 'Settings', icon: UserCog, allowMember: false, allowOfficer: appUser?.role === 'super_admin' },
   ];
 
   const filteredNav = navigation.filter((item) =>
-    appUser?.role && item.roles.includes(appUser.role)
+    isMember ? item.allowMember : item.allowOfficer
   );
+
+
 
   const handleNavClick = (pageId: string) => {
     if (onNavigate) {

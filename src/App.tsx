@@ -14,10 +14,14 @@ import { AccountNotFound } from './components/AccountNotFound';
 import { initializeDatabase } from './lib/db-init';
 import { Loader2 } from 'lucide-react';
 
+import { usePermissions } from './hooks/usePermissions';
+
 function AppContent() {
   const { user, appUser, loading } = useAuth();
+  const { isMember } = usePermissions();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [pageData, setPageData] = useState<unknown>(null);
+
   const [dbInitialized, setDbInitialized] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
 
@@ -138,22 +142,26 @@ function AppContent() {
   }
 
   return (
+
     <>
       <Navbar currentPage={currentPage} onNavigate={handleNavigate} />
       <main className="container mx-auto px-4 py-6 max-w-7xl">
-        {currentPage === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
-        {currentPage === 'members' && (
+        {(currentPage === 'dashboard' || (isMember && currentPage !== 'dashboard')) && (
+          <Dashboard onNavigate={handleNavigate} />
+        )}
+        {currentPage === 'members' && !isMember && (
           <Members
             initialSearch={(pageData as { search?: string })?.search}
             initialAction={(pageData as { action?: string })?.action}
             initialTier={(pageData as { tier?: string })?.tier}
           />
         )}
-        {currentPage === 'reports' && <Reports />}
+        {currentPage === 'reports' && !isMember && <Reports />}
         {currentPage === 'users' && appUser.role === 'super_admin' && <UserManagement />}
       </main>
     </>
   );
+
 }
 
 function App() {

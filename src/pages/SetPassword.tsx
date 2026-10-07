@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../contexts/ThemeContext';
 import { validateStrongPassword, checkPwnedPassword } from '../lib/password-validator';
-import { ShieldCheck, Eye, EyeOff, Loader2, AlertTriangle, CheckCircle2, Lock } from 'lucide-react';
+import { ShieldCheck, Eye, EyeOff, Loader2, AlertTriangle, CheckCircle2, Lock, Sun, Moon } from 'lucide-react';
 
 export function SetPassword() {
+  const { theme, toggleTheme } = useTheme();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -194,14 +196,39 @@ export function SetPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="glass-panel bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-md w-full border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="bg-gradient-to-r from-maroon-600 via-maroon-700 to-amber-700 p-6 text-white text-center">
-          <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center mx-auto mb-3 shadow-md">
-            <Lock className="w-6 h-6" />
+    <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-500">
+      {/* Ambient background glow accents */}
+      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-maroon-500/15 dark:bg-maroon-600/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-amber-500/15 dark:bg-neon-blue/15 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Theme toggle button top right */}
+      <div className="absolute top-6 right-6 z-20">
+        <button
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
+          className="p-2.5 rounded-2xl glass-panel bg-white/70 dark:bg-gray-800/70 border border-gray-200/80 dark:border-white/10 text-gray-700 dark:text-gray-200 hover:text-maroon-600 dark:hover:text-neon-blue shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2 text-xs font-semibold"
+        >
+          {theme === 'dark' ? (
+            <>
+              <Sun className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">Light</span>
+            </>
+          ) : (
+            <>
+              <Moon className="w-4 h-4 text-maroon-600" />
+              <span className="hidden sm:inline">Dark</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="glass-panel bg-white/85 dark:bg-gray-800/90 rounded-3xl shadow-2xl max-w-md w-full border border-gray-200/80 dark:border-white/10 overflow-hidden backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-300">
+        <div className="bg-gradient-to-r from-maroon-700 via-maroon-800 to-amber-700 dark:from-maroon-900 dark:via-maroon-950 dark:to-gray-900 p-8 text-white text-center relative overflow-hidden">
+          <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center mx-auto mb-3 shadow-md">
+            <Lock className="w-6 h-6 text-white" />
           </div>
           <h2 className="text-2xl font-black uppercase tracking-tight">Set Account Password</h2>
-          <p className="text-xs text-maroon-100 mt-1">SabraLeos KPI System — Zero-Knowledge Security</p>
+          <p className="text-xs text-amber-200/90 mt-1">SabraLeos KPI System — Zero-Knowledge Security</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">

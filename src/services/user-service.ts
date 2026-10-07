@@ -61,7 +61,9 @@ export interface SessionContext {
 
 export interface ProvisionResult {
   reg_no: string;
-  status: 'invited' | 'already_provisioned' | 'no_email' | 'failed';
+  status: 'provisioned' | 'invited' | 'already_provisioned' | 'no_email' | 'failed';
+  email?: string;
+  temporaryPassword?: string;
   message?: string;
 }
 
@@ -108,18 +110,22 @@ export const userService = {
   },
 
   /**
-   * Invite-only batch member provisioning (super_admin only).
+   * Direct batch member provisioning with temporary password (admin/editor).
    */
-  async provisionMembers(regNos: string[]): Promise<ProvisionResult[]> {
+  async provisionMembers(
+    regNos: string[],
+    defaultPassword?: string,
+    passwords?: Record<string, string>
+  ): Promise<ProvisionResult[]> {
     const data = await callEdgeFunction<{ success: boolean; results: ProvisionResult[] }>(
       'provision-members',
-      { reg_nos: regNos }
+      { reg_nos: regNos, default_password: defaultPassword, passwords }
     );
     return data.results || [];
   },
 
   /**
-   * Create an officer user account via invite-only Edge Function (super_admin only).
+   * Create an officer user account directly with temporary password (admin/editor).
    */
   async createOfficer(
     email: string,
@@ -129,19 +135,25 @@ export const userService = {
       role: 'super_admin' | 'editor' | 'viewer';
       linked_member_reg_no?: string | null;
     },
-  ): Promise<AppUser> {
-    const data = await callEdgeFunction<{ success: boolean; user: AppUser }>('admin-create-user', {
+    password?: string,
+  ): Promise<{ user: AppUser; temporaryPassword?: string }> {
+    const data = await callEdgeFunction<{
+      success: boolean;
+      user: AppUser;
+      temporaryPassword?: string;
+    }>('admin-create-user', {
       email,
       username: userData.username,
       designation: userData.designation,
       role: userData.role,
       linked_member_reg_no: userData.linked_member_reg_no ?? null,
+      password: password || undefined,
     });
-    return data.user;
+    return { user: data.user, temporaryPassword: data.temporaryPassword };
   },
 
   /**
-   * Legacy create adapter pointing to invite-only creation.
+   * Create adapter with optional manual/temporary password.
    */
   async create(
     email: string,
@@ -151,26 +163,32 @@ export const userService = {
       role: AppUserRole;
       linked_member_reg_no?: string | null;
     },
+    password?: string,
   ): Promise<AppUser> {
     if (userData.role === 'member' && userData.linked_member_reg_no) {
-      const results = await this.provisionMembers([userData.linked_member_reg_no]);
+      const results = await this.provisionMembers([userData.linked_member_reg_no], password);
       const res = results[0];
       if (res && res.status === 'failed') {
         throw new Error(res.message || 'Failed to provision member account');
       }
       const created = await this.getByLinkedMember(userData.linked_member_reg_no);
       if (!created) {
-        throw new Error('Account invitation dispatched, profile pending confirmation.');
+        throw new Error('Account creation processed, profile initializing.');
       }
       return created;
     }
 
-    return this.createOfficer(email, {
-      username: userData.username,
-      designation: userData.designation,
-      role: userData.role as 'super_admin' | 'editor' | 'viewer',
-      linked_member_reg_no: userData.linked_member_reg_no,
-    });
+    const result = await this.createOfficer(
+      email,
+      {
+        username: userData.username,
+        designation: userData.designation,
+        role: userData.role as 'super_admin' | 'editor' | 'viewer',
+        linked_member_reg_no: userData.linked_member_reg_no,
+      },
+      password
+    );
+    return result.user;
   },
 
   /**
@@ -192,7 +210,20 @@ export const userService = {
   },
 
   /**
-   * Super Admin sends a password reset email directly to the member's verified on-file inbox.
+   * Admin / Editor directly sets a temporary / mock password for a user.
+   */
+  async adminSetUserPassword(
+    userId: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message: string; temporaryPassword: string }> {
+    return callEdgeFunction<{ success: boolean; message: string; temporaryPassword: string }>(
+      'admin-set-user-password',
+      { user_id: userId, new_password: newPassword }
+    );
+  },
+
+  /**
+   * Super Admin sends a password reset email directly to the member's verified on-file inbox (if needed).
    */
   async sendPasswordResetEmail(userId: string): Promise<void> {
     await callEdgeFunction('admin-send-password-reset', { user_id: userId });
