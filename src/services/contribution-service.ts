@@ -75,6 +75,59 @@ export const contributionService = {
     return (data as Contribution[]) || [];
   },
 
+  async getReportContributions(startDate?: string, endDate?: string): Promise<Contribution[]> {
+    let query = supabase
+      .from('contributions')
+      .select('id, member_reg_no, project_name, time_period, position, points, avenue, date_added, added_by')
+      .order('date_added', { ascending: false });
+
+    if (startDate) {
+      query = query.gte('date_added', startDate);
+    }
+    if (endDate) {
+      query = query.lte('date_added', endDate.includes('T') ? endDate : `${endDate}T23:59:59`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data as Contribution[]) || [];
+  },
+
+  async getPagedExportContributions(startDate?: string, endDate?: string): Promise<Contribution[]> {
+    const allResults: Contribution[] = [];
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      let query = supabase
+        .from('contributions')
+        .select('id, member_reg_no, project_name, time_period, position, points, avenue, date_added, added_by')
+        .order('date_added', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (startDate) {
+        query = query.gte('date_added', startDate);
+      }
+      if (endDate) {
+        query = query.lte('date_added', endDate.includes('T') ? endDate : `${endDate}T23:59:59`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      const rows = (data as Contribution[]) || [];
+      allResults.push(...rows);
+
+      if (rows.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        from += PAGE_SIZE;
+      }
+    }
+
+    return allResults;
+  },
+
   async getMonthlyStats(year: number, month: number): Promise<number> {
     const startDate = new Date(year, month - 1, 1).toISOString();
     const endDate = new Date(year, month, 0, 23, 59, 59).toISOString();
