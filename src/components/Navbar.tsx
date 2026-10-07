@@ -26,8 +26,10 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
+  const isMember = appUser?.role === 'member';
+
   const navigation = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'editor', 'viewer'] },
+    { id: 'dashboard', label: isMember ? 'My Portal' : 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'editor', 'viewer', 'member'] },
     { id: 'members', label: 'Members', icon: Users, roles: ['super_admin', 'editor', 'viewer'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['super_admin', 'editor', 'viewer'] },
     { id: 'users', label: 'Settings', icon: UserCog, roles: ['super_admin'] },
@@ -36,6 +38,7 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
   const filteredNav = navigation.filter((item) =>
     appUser?.role && item.roles.includes(appUser.role)
   );
+
 
   const handleNavClick = (pageId: string) => {
     if (onNavigate) {

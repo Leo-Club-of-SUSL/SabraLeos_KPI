@@ -11,7 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const mockUseAuth = vi.mocked(useAuth);
 
-function setRole(role: 'super_admin' | 'editor' | 'viewer' | null) {
+function setRole(role: 'super_admin' | 'editor' | 'viewer' | 'member' | null) {
     mockUseAuth.mockReturnValue({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         user: role ? { id: 'test-user' } as any : null,
@@ -43,6 +43,8 @@ describe('usePermissions', () => {
         expect(result.current.isSuperAdmin).toBe(true);
         expect(result.current.isEditor).toBe(false);
         expect(result.current.isViewer).toBe(false);
+        expect(result.current.isMember).toBe(false);
+        expect(result.current.canViewAdminDashboard).toBe(true);
         expect(result.current.role).toBe('super_admin');
     });
 
@@ -55,6 +57,8 @@ describe('usePermissions', () => {
         expect(result.current.isSuperAdmin).toBe(false);
         expect(result.current.isEditor).toBe(true);
         expect(result.current.isViewer).toBe(false);
+        expect(result.current.isMember).toBe(false);
+        expect(result.current.canViewAdminDashboard).toBe(true);
         expect(result.current.role).toBe('editor');
     });
 
@@ -67,7 +71,23 @@ describe('usePermissions', () => {
         expect(result.current.isSuperAdmin).toBe(false);
         expect(result.current.isEditor).toBe(false);
         expect(result.current.isViewer).toBe(true);
+        expect(result.current.isMember).toBe(false);
+        expect(result.current.canViewAdminDashboard).toBe(true);
         expect(result.current.role).toBe('viewer');
+    });
+
+    it('member has restricted member portal permissions', () => {
+        setRole('member');
+        const { result } = renderHook(() => usePermissions());
+
+        expect(result.current.canEdit).toBe(false);
+        expect(result.current.canManageUsers).toBe(false);
+        expect(result.current.isSuperAdmin).toBe(false);
+        expect(result.current.isEditor).toBe(false);
+        expect(result.current.isViewer).toBe(false);
+        expect(result.current.isMember).toBe(true);
+        expect(result.current.canViewAdminDashboard).toBe(false);
+        expect(result.current.role).toBe('member');
     });
 
     it('returns undefined role when no user is logged in', () => {
@@ -79,3 +99,4 @@ describe('usePermissions', () => {
         expect(result.current.role).toBeUndefined();
     });
 });
+

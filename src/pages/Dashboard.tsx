@@ -5,6 +5,8 @@ import { Trophy, Award, TrendingUp, Search, Plus } from 'lucide-react';
 import type { Member } from '../types/database';
 import { TierBadge } from '../components/TierBadge';
 import { TierOverviewCard } from '../components/TierOverviewCard';
+import { MemberDashboard } from '../components/MemberDashboard';
+import { usePermissions } from '../hooks/usePermissions';
 import { getTier, TIERS_CONFIG } from '../lib/tier-calculator';
 
 interface DashboardProps {
@@ -12,6 +14,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
+  const { isMember } = usePermissions();
   const [topMembers, setTopMembers] = useState<Member[]>([]);
   const [totalPoints, setTotalPoints] = useState(0);
   const [monthlyProjects, setMonthlyProjects] = useState(0);
@@ -21,8 +24,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [tierDistribution, setTierDistribution] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (!isMember) {
+      loadDashboardData();
+    }
+  }, [isMember]);
 
   const loadDashboardData = async () => {
     try {
@@ -63,6 +68,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  if (isMember) {
+    return <MemberDashboard />;
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -70,6 +79,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
     );
   }
+
 
   return (
     <div className="space-y-6">
