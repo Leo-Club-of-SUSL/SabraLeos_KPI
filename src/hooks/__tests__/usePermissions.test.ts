@@ -90,6 +90,32 @@ describe('usePermissions', () => {
         expect(result.current.role).toBe('member');
     });
 
+    it('viewer account with linked member reg no is routed to member portal', () => {
+        mockUseAuth.mockReturnValue({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            user: { id: 'test-user' } as any,
+            appUser: {
+                id: 'test-user',
+                username: '21AS001',
+                designation: 'Member',
+                role: 'viewer',
+                status: 'active',
+                linked_member_reg_no: '21/AS/001',
+                created_at: new Date().toISOString(),
+            },
+            loading: false,
+            signIn: vi.fn(),
+            signOut: vi.fn(),
+            refreshUser: vi.fn(),
+        });
+
+        const { result } = renderHook(() => usePermissions());
+
+        expect(result.current.isMember).toBe(true);
+        expect(result.current.isOfficer).toBe(false);
+        expect(result.current.canViewAdminDashboard).toBe(false);
+    });
+
     it('returns undefined role when no user is logged in', () => {
         setRole(null);
         const { result } = renderHook(() => usePermissions());
@@ -98,5 +124,6 @@ describe('usePermissions', () => {
         expect(result.current.canManageUsers).toBe(false);
         expect(result.current.role).toBeUndefined();
     });
+
 });
 
