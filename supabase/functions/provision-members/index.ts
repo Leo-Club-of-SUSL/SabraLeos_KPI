@@ -146,24 +146,37 @@ Deno.serve(async (req: Request) => {
         chosenUsername = `${chosenUsername} (${member.reg_no})`;
       }
 
-      // Insert app_users profile
-      const { error: insertError } = await serviceClient.from('app_users').insert({
+      // Insert app_users profile (try 'member', fallback to 'viewer' if DB constraint has ('super_admin','editor','viewer'))
+      let roleToUse: string = 'member';
+      let insertResult = await serviceClient.from('app_users').insert({
         id: newUserId,
         username: chosenUsername,
         designation: 'Member',
-        role: 'member',
+        role: roleToUse,
         linked_member_reg_no: member.reg_no,
         status: 'active',
       });
 
-      if (insertError) {
-        console.error('Failed to create app_users record for', reg_no, insertError);
+      if (insertResult.error && insertResult.error.message.includes('app_users_role_check')) {
+        roleToUse = 'viewer';
+        insertResult = await serviceClient.from('app_users').insert({
+          id: newUserId,
+          username: chosenUsername,
+          designation: 'Member',
+          role: roleToUse,
+          linked_member_reg_no: member.reg_no,
+          status: 'active',
+        });
+      }
+
+      if (insertResult.error) {
+        console.error('Failed to create app_users record for', reg_no, insertResult.error);
         // Compensating rollback: delete created auth user
         await serviceClient.auth.admin.deleteUser(newUserId);
         results.push({ 
           reg_no, 
           status: 'failed', 
-          message: `Profile initialization failed: ${insertError.message}` 
+          message: `Profile initialization failed: ${insertResult.error.message}` 
         });
         continue;
       }

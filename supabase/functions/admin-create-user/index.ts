@@ -97,26 +97,45 @@ Deno.serve(async (req: Request) => {
 
     const newUserId = authData.user.id;
 
-    // 4. Create app_users profile
-    const { data: profileData, error: insertError } = await serviceClient
+    // 4. Create app_users profile (try role, fallback to 'viewer' if role is 'member' and DB constraint has ('super_admin','editor','viewer'))
+    let roleToUse: string = role;
+    let insertResult = await serviceClient
       .from('app_users')
       .insert({
         id: newUserId,
         username: username.trim(),
         designation: designation.trim(),
-        role,
+        role: roleToUse,
         linked_member_reg_no: linked_member_reg_no || null,
         status: 'active',
       })
       .select()
       .single();
 
-    if (insertError) {
+    if (insertResult.error && insertResult.error.message.includes('app_users_role_check') && roleToUse === 'member') {
+      roleToUse = 'viewer';
+      insertResult = await serviceClient
+        .from('app_users')
+        .insert({
+          id: newUserId,
+          username: username.trim(),
+          designation: designation.trim(),
+          role: roleToUse,
+          linked_member_reg_no: linked_member_reg_no || null,
+          status: 'active',
+        })
+        .select()
+        .single();
+    }
+
+    if (insertResult.error || !insertResult.data) {
       // Compensating rollback
       await serviceClient.auth.admin.deleteUser(newUserId);
-      console.error('Profile insert error:', insertError.message);
-      return errorResponse(`Failed to create user profile: ${insertError.message}`, 500);
+      console.error('Profile insert error:', insertResult.error?.message);
+      return errorResponse(`Failed to create user profile: ${insertResult.error?.message || 'Insert failed'}`, 500);
     }
+
+    const profileData = insertResult.data;
 
     // Log security event
     try {

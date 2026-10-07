@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { logService } from '../services/log-service';
-import { LogIn, Loader2, Eye, EyeOff, ShieldAlert, Lock, Mail } from 'lucide-react';
+import { LogIn, Loader2, Eye, EyeOff, ShieldAlert, Lock, Mail, Moon, Sun, Sparkles } from 'lucide-react';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_SECONDS = 60;
 
 export function LoginScreen() {
   const { signIn } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -66,7 +68,6 @@ export function LoginScreen() {
         });
         setError(`Too many failed attempts. Please wait ${LOCKOUT_SECONDS} seconds.`);
       } else {
-        // Uniform error response
         setError(`Invalid email or password. ${MAX_ATTEMPTS - newAttempts} attempt(s) remaining.`);
       }
     } finally {
@@ -75,48 +76,74 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-gray-900 via-maroon-950 to-gray-900">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden transition-colors duration-500">
+      {/* Ambient background glow accents */}
+      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-maroon-500/15 dark:bg-maroon-600/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-amber-500/15 dark:bg-neon-blue/15 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Theme toggle button top right */}
+      <div className="absolute top-6 right-6 z-20">
+        <button
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
+          className="p-2.5 rounded-2xl glass-panel bg-white/70 dark:bg-gray-800/70 border border-gray-200/80 dark:border-white/10 text-gray-700 dark:text-gray-200 hover:text-maroon-600 dark:hover:text-neon-blue shadow-lg hover:scale-105 transition-all duration-200 flex items-center gap-2 text-xs font-semibold"
+        >
+          {theme === 'dark' ? (
+            <>
+              <Sun className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">Light</span>
+            </>
+          ) : (
+            <>
+              <Moon className="w-4 h-4 text-maroon-600" />
+              <span className="hidden sm:inline">Dark</span>
+            </>
+          )}
+        </button>
+      </div>
+
       {/* Floating Card Container */}
-      <div className="w-full max-w-md glass-panel rounded-[2rem] shadow-2xl relative overflow-hidden flex flex-col items-center py-8 px-6 border border-white/10 bg-white/5 backdrop-blur-xl">
-
-        {/* Top Title */}
-        <div className="w-full text-center z-10 flex-shrink-0 mb-6">
-          <h1 className="text-3xl font-black text-white tracking-tighter uppercase font-['Oswald'] drop-shadow-sm">
-            SabraLeos KPI
-          </h1>
-          <p className="text-xs text-amber-200/80 font-medium mt-1 tracking-wider uppercase">
-            Performance & Leadership Portal
-          </p>
-        </div>
-
-        {/* Main Content Wrapper */}
-        <div className="w-full flex flex-col items-center justify-center relative z-10">
-
-          {/* Main Logo */}
-          <div className="mb-6 relative group flex-shrink-0">
-            <div className="w-28 h-28 rounded-full flex items-center justify-center shadow-xl overflow-hidden relative border-2 border-amber-400/40 bg-maroon-900/40 p-2">
+      <div className="w-full max-w-md glass-panel bg-white/85 dark:bg-gray-800/90 rounded-3xl shadow-2xl relative overflow-hidden border border-gray-200/80 dark:border-white/10 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-300">
+        
+        {/* Top Header with Branding */}
+        <div className="bg-gradient-to-r from-maroon-700 via-maroon-800 to-amber-700 dark:from-maroon-900 dark:via-maroon-950 dark:to-gray-900 p-8 text-white text-center relative overflow-hidden">
+          {/* Subtle light streak */}
+          <div className="absolute -top-12 -right-12 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+          
+          <div className="relative z-10">
+            <div className="w-20 h-20 rounded-2xl bg-white p-2 shadow-2xl mx-auto mb-3.5 flex items-center justify-center ring-4 ring-white/20 dark:ring-white/10">
               <img
                 src="/images/Round_logo.png"
-                alt="Leo Club Logo"
+                alt="SabraLeos Logo"
                 className="w-full h-full object-contain"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }}
               />
             </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase">
+              SabraLeos KPI
+            </h1>
+            <p className="text-xs text-amber-200/90 font-medium mt-1 tracking-wider uppercase flex items-center justify-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-amber-300" />
+              Performance & Member Portal
+            </p>
           </div>
+        </div>
+
+        {/* Main Content Wrapper */}
+        <div className="p-7 sm:p-8 space-y-5">
+          {error && (
+            <div className="p-3.5 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-2.5 text-red-700 dark:text-red-300 text-xs font-semibold animate-shake">
+              <ShieldAlert className="w-4 h-4 flex-shrink-0 text-red-600 dark:text-red-400" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="w-full space-y-4">
-            {error && (
-              <div className="p-3.5 bg-red-500/20 border border-red-500/40 rounded-xl flex items-center gap-2.5 text-red-200 text-xs animate-shake">
-                <ShieldAlert className="w-4 h-4 flex-shrink-0 text-red-400" />
-                <span>{error}</span>
-              </div>
-            )}
-
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
                 Email Address
               </label>
               <div className="relative">
@@ -126,21 +153,21 @@ export function LoginScreen() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={isLockedOut || loading}
-                  placeholder="leo.member@domain.com"
-                  className="w-full px-4 py-3 pl-10 border border-white/10 rounded-xl bg-white/10 text-white placeholder-gray-400 focus:ring-2 focus:ring-amber-400/80 outline-none text-sm disabled:opacity-50 transition-all"
+                  placeholder="your.email@leoclubsusl.lk"
+                  className="w-full px-4 py-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50/80 dark:bg-gray-900/60 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-maroon-500 dark:focus:ring-neon-blue focus:border-transparent outline-none text-sm disabled:opacity-50 transition-all font-medium"
                 />
-                <Mail className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
+                <Mail className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400 dark:text-gray-500" />
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider">
+                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                   Password
                 </label>
                 <a
-                  href="/#auth/forgot-password"
-                  className="text-xs text-amber-300 hover:text-amber-200 hover:underline transition-colors"
+                  href="/#forgot-password"
+                  className="text-xs font-semibold text-maroon-600 dark:text-neon-blue hover:underline transition-colors"
                 >
                   Forgot password?
                 </a>
@@ -153,14 +180,14 @@ export function LoginScreen() {
                   required
                   disabled={isLockedOut || loading}
                   placeholder="Enter your password"
-                  className="w-full px-4 py-3 pl-10 pr-10 border border-white/10 rounded-xl bg-white/10 text-white placeholder-gray-400 focus:ring-2 focus:ring-amber-400/80 outline-none text-sm disabled:opacity-50 transition-all"
+                  className="w-full px-4 py-3 pl-10 pr-10 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50/80 dark:bg-gray-900/60 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-maroon-500 dark:focus:ring-neon-blue focus:border-transparent outline-none text-sm disabled:opacity-50 transition-all font-medium"
                 />
-                <Lock className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
+                <Lock className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400 dark:text-gray-500" />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   disabled={isLockedOut || loading}
-                  className="absolute right-3.5 top-3.5 text-gray-400 hover:text-white transition-colors"
+                  className="absolute right-3.5 top-3.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -170,7 +197,7 @@ export function LoginScreen() {
             <button
               type="submit"
               disabled={loading || isLockedOut}
-              className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-maroon-950 font-black tracking-wider uppercase rounded-xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2 text-sm mt-2"
+              className="w-full py-3.5 px-4 bg-maroon-600 hover:bg-maroon-700 text-white font-bold tracking-wider uppercase rounded-xl transition-all shadow-lg shadow-maroon-600/25 hover:shadow-maroon-600/40 disabled:opacity-50 flex items-center justify-center gap-2 text-sm mt-3"
             >
               {loading ? (
                 <>
@@ -180,15 +207,17 @@ export function LoginScreen() {
                 `Locked (${lockoutRemaining}s)`
               ) : (
                 <>
-                  <LogIn className="w-4 h-4" /> Sign In
+                  <LogIn className="w-4 h-4" /> Sign In to Portal
                 </>
               )}
             </button>
           </form>
 
-          <p className="text-[11px] text-gray-400 text-center mt-6">
-            Leo Club of Sabaragamuwa University of Sri Lanka
-          </p>
+          <div className="pt-2 border-t border-gray-200/80 dark:border-white/10 text-center">
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+              Leo Club of Sabaragamuwa University of Sri Lanka
+            </p>
+          </div>
         </div>
       </div>
     </div>
