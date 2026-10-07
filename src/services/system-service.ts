@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { Faculty, FacultyInsert, FacultyUpdate, Batch, BatchInsert, BatchUpdate, Avenue, AvenueInsert, AvenueUpdate, Json } from '../types/database';
 
-export const EXPECTED_SCHEMA_VERSION = '2026.10.06.1';
+export const EXPECTED_SCHEMA_VERSION = '2026.10.07.1';
 
 export interface TierPreviewResult {
   promotions: number;

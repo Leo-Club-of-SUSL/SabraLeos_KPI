@@ -40,8 +40,8 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [pageData, setPageData] = useState<unknown>(null);
 
-  const [dbInitialized, setDbInitialized] = useState(false);
-  const [dbLoading, setDbLoading] = useState(true);
+  const [dbInitialized, setDbInitialized] = useState(true);
+  const [schemaMismatch, setSchemaMismatch] = useState<string | null>(null);
 
   // Check URL hash, path, or search query for auth routes (invite acceptance, password reset, PKCE auth codes)
   const isAuthRoute = () => {
@@ -85,25 +85,34 @@ function AppContent() {
     };
   }, []);
 
+  // Post-render background initialization (db check, tier thresholds, schema check)
   useEffect(() => {
-    const initDB = async () => {
-      const initialized = await initializeDatabase();
-      setDbInitialized(initialized);
+    const initStartup = async () => {
+      try {
+        const [initialized, { systemService }] = await Promise.all([
+          initializeDatabase(),
+          import('./services/system-service'),
+        ]);
+        setDbInitialized(initialized);
 
-      if (initialized) {
-        // Load custom tier thresholds from system settings / cache
-        try {
-          const { systemService } = await import('./services/system-service');
-          await systemService.getTierThresholds();
-        } catch (e) {
-          console.warn('Could not load tier thresholds on init:', e);
+        if (initialized) {
+          const [, schemaStatus] = await Promise.all([
+            systemService.getTierThresholds().catch(e => {
+              console.warn('Could not load tier thresholds on init:', e);
+            }),
+            systemService.checkSchemaVersion().catch(() => ({ matches: true, current: null, expected: '' })),
+          ]);
+
+          if (schemaStatus && !schemaStatus.matches && schemaStatus.current) {
+            setSchemaMismatch(`Database schema version mismatch (current: ${schemaStatus.current}, expected: ${schemaStatus.expected}). Please apply latest migrations.`);
+          }
         }
+      } catch (e) {
+        console.warn('Startup background initialization note:', e);
       }
-
-      setDbLoading(false);
     };
 
-    initDB();
+    initStartup();
   }, []);
 
   // Prefetch landing page chunk after login based on role
@@ -124,6 +133,11 @@ function AppContent() {
 
   return (
     <ChunkErrorBoundary>
+      {schemaMismatch && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs font-medium text-amber-700 dark:text-amber-400">
+          {schemaMismatch}
+        </div>
+      )}
       {authRoute === 'set-password' ? (
         <Suspense fallback={<PageSkeleton />}>
           <SetPassword />
@@ -132,7 +146,7 @@ function AppContent() {
         <Suspense fallback={<PageSkeleton />}>
           <ForgotPassword />
         </Suspense>
-      ) : loading || dbLoading ? (
+      ) : loading ? (
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center glass-panel p-8 rounded-2xl">
             <Loader2 className="w-12 h-12 animate-spin text-maroon-600 dark:text-neon-blue mx-auto mb-4" />

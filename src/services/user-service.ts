@@ -55,6 +55,8 @@ export interface SessionContext {
   role?: AppUserRole;
   status?: 'active' | 'suspended';
   linked_member_reg_no?: string | null;
+  created_at?: string;
+  updated_at?: string;
   aal?: string;
   require_mfa?: boolean;
 }
