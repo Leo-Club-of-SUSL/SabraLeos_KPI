@@ -30,7 +30,7 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'editor', 'viewer'] },
     { id: 'members', label: 'Members', icon: Users, roles: ['super_admin', 'editor', 'viewer'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['super_admin', 'editor', 'viewer'] },
-    { id: 'users', label: 'User Management', icon: UserCog, roles: ['super_admin'] },
+    { id: 'users', label: 'Settings', icon: UserCog, roles: ['super_admin'] },
   ];
 
   const filteredNav = navigation.filter((item) =>

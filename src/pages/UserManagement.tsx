@@ -201,20 +201,20 @@ export function UserManagement() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            User Management
+            Settings
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Manage system users and permissions
+            Club configuration, access control, and administrative tools
           </p>
         </div>
 
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-8 text-center">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-8 text-center glass-panel">
           <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
             Access Denied
           </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            You don't have permission to access User Management. Only Super Admins can manage users.
+          <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+            You don't have permission to access System Settings. Only Super Admins can manage club configuration and officer accounts.
           </p>
         </div>
       </div>
@@ -222,10 +222,10 @@ export function UserManagement() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-300">
       {/* Schema Version Mismatch Banner */}
       {schemaStatus && !schemaStatus.matches && (
-        <div className="p-4 bg-red-600 text-white rounded-xl shadow-lg flex items-center justify-between gap-4">
+        <div className="p-4 bg-red-600 text-white rounded-2xl shadow-xl flex items-center justify-between gap-4 border border-red-500">
           <div className="flex items-center gap-3">
             <AlertTriangle className="w-6 h-6 shrink-0" />
             <div>
@@ -241,115 +241,138 @@ export function UserManagement() {
 
       {/* Action Notification Banner */}
       {actionMessage && (
-        <div className={`p-4 rounded-xl flex items-center justify-between ${
+        <div className={`p-4 rounded-2xl flex items-center justify-between shadow-md border ${
           actionMessage.type === 'success' 
-            ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' 
-            : 'bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+            ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' 
+            : 'bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
         }`}>
-          <div className="flex items-center gap-2">
-            {actionMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
-            <span className="text-sm font-medium">{actionMessage.text}</span>
+          <div className="flex items-center gap-2.5">
+            {actionMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0 text-red-500" />}
+            <span className="text-sm font-semibold">{actionMessage.text}</span>
           </div>
-          <button onClick={() => setActionMessage(null)} className="text-xs hover:underline">Dismiss</button>
+          <button onClick={() => setActionMessage(null)} className="text-xs font-bold hover:underline ml-4">Dismiss</button>
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            User Management & Security
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Zero-knowledge account provisioning, role-based access, and security overview
-          </p>
-        </div>
+      {/* Header & Main Section Banner */}
+      <div className="glass-panel p-6 rounded-3xl border border-gray-200/80 dark:border-white/10 shadow-lg relative overflow-hidden bg-gradient-to-br from-white/90 via-white/50 to-amber-50/20 dark:from-gray-800/90 dark:via-gray-800/50 dark:to-maroon-950/20">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-maroon-600 dark:bg-neon-blue text-white dark:text-gray-900 flex items-center justify-center font-bold shadow-md">
+                <Settings className="w-4 h-4" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white tracking-tight">
+                Settings
+              </h1>
+            </div>
+            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+              Club configuration, standing tier thresholds, officer accounts, and security overview
+            </p>
+          </div>
 
-        <div className="flex bg-gray-100 dark:bg-white/5 p-1 rounded-xl w-fit flex-wrap gap-1">
-          {permissions.canManageUsers && (
+          {activeTab === 'users' && permissions.isSuperAdmin && (
             <button
-              onClick={() => setActiveTab('users')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all duration-200 ${
-                activeTab === 'users'
-                  ? 'bg-white dark:bg-gray-700 text-maroon-600 dark:text-neon-blue shadow-lg'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
+              onClick={() => {
+                setEditingUser(null);
+                setShowCreateForm(true);
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-maroon-600 hover:bg-maroon-700 text-white rounded-xl font-bold transition-all duration-200 shadow-lg shadow-maroon-600/20 hover:shadow-maroon-600/40 text-sm shrink-0 self-start lg:self-auto"
             >
-              <UsersIcon className="w-4 h-4" />
-              USER ACCOUNTS
-            </button>
-          )}
-
-          {permissions.isSuperAdmin && (
-            <button
-              onClick={() => setActiveTab('security')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all duration-200 ${
-                activeTab === 'security'
-                  ? 'bg-white dark:bg-gray-700 text-maroon-600 dark:text-neon-blue shadow-lg'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              <ShieldAlert className="w-4 h-4" />
-              SECURITY OVERVIEW {alerts.length > 0 && `(${alerts.length})`}
-            </button>
-          )}
-
-          <button
-            onClick={() => setActiveTab('system')}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all duration-200 ${
-              activeTab === 'system'
-                ? 'bg-white dark:bg-gray-700 text-maroon-600 dark:text-neon-blue shadow-lg'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
-          >
-            <Settings className="w-4 h-4" />
-            SYSTEM DATA
-          </button>
-
-          {permissions.canViewLogs && (
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-xs tracking-wider transition-all duration-200 ${
-                activeTab === 'logs'
-                  ? 'bg-white dark:bg-gray-700 text-maroon-600 dark:text-neon-blue shadow-lg'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-              }`}
-            >
-              <ListTree className="w-4 h-4" />
-              AUDIT LOGS
+              <UserPlus className="w-4 h-4" />
+              Invite Officer
             </button>
           )}
         </div>
 
-        {activeTab === 'users' && permissions.isSuperAdmin && (
-          <button
-            onClick={() => {
-              setEditingUser(null);
-              setShowCreateForm(true);
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md text-sm shrink-0"
-          >
-            <UserPlus className="w-4 h-4" />
-            Invite Officer
-          </button>
-        )}
+        {/* Sub-Section Navigation Tabs Bar */}
+        <div className="mt-6 pt-5 border-t border-gray-200/80 dark:border-white/10">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-gray-100/80 dark:bg-black/30 p-1.5 rounded-2xl border border-gray-200/60 dark:border-white/5">
+            {permissions.canManageUsers && (
+              <button
+                onClick={() => setActiveTab('users')}
+                className={`flex items-center justify-center sm:justify-start gap-2.5 px-4 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition-all duration-200 ${
+                  activeTab === 'users'
+                    ? 'bg-white dark:bg-gray-800 text-maroon-600 dark:text-neon-blue shadow-md border border-gray-200/50 dark:border-white/10 scale-[1.01]'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/50 dark:hover:bg-white/5'
+                }`}
+              >
+                <UsersIcon className="w-4 h-4 shrink-0" />
+                <span className="truncate">Officer Accounts</span>
+                <span className={`hidden md:inline-flex px-2 py-0.5 rounded-full text-[10px] font-mono ml-auto ${
+                  activeTab === 'users'
+                    ? 'bg-maroon-50 text-maroon-700 dark:bg-neon-blue/10 dark:text-neon-blue'
+                    : 'bg-gray-200/60 text-gray-700 dark:bg-white/10 dark:text-gray-300'
+                }`}>
+                  {users.length}
+                </span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveTab('system')}
+              className={`flex items-center justify-center sm:justify-start gap-2.5 px-4 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition-all duration-200 ${
+                activeTab === 'system'
+                  ? 'bg-white dark:bg-gray-800 text-maroon-600 dark:text-neon-blue shadow-md border border-gray-200/50 dark:border-white/10 scale-[1.01]'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/50 dark:hover:bg-white/5'
+              }`}
+            >
+              <Settings className="w-4 h-4 shrink-0" />
+              <span className="truncate">Club & Tiers</span>
+            </button>
+
+            {permissions.isSuperAdmin && (
+              <button
+                onClick={() => setActiveTab('security')}
+                className={`flex items-center justify-center sm:justify-start gap-2.5 px-4 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition-all duration-200 ${
+                  activeTab === 'security'
+                    ? 'bg-white dark:bg-gray-800 text-maroon-600 dark:text-neon-blue shadow-md border border-gray-200/50 dark:border-white/10 scale-[1.01]'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/50 dark:hover:bg-white/5'
+                }`}
+              >
+                <ShieldAlert className="w-4 h-4 shrink-0" />
+                <span className="truncate">Security</span>
+                {alerts.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-red-500 text-white ml-auto animate-pulse">
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {permissions.canViewLogs && (
+              <button
+                onClick={() => setActiveTab('logs')}
+                className={`flex items-center justify-center sm:justify-start gap-2.5 px-4 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition-all duration-200 ${
+                  activeTab === 'logs'
+                    ? 'bg-white dark:bg-gray-800 text-maroon-600 dark:text-neon-blue shadow-md border border-gray-200/50 dark:border-white/10 scale-[1.01]'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/50 dark:hover:bg-white/5'
+                }`}
+              >
+                <ListTree className="w-4 h-4 shrink-0" />
+                <span className="truncate">Audit Logs</span>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {activeTab === 'users' && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="glass-panel rounded-3xl shadow-lg border border-gray-200/80 dark:border-white/10 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-700">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50/90 dark:bg-white/5 border-b border-gray-200/80 dark:border-white/5">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     User / Username
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Designation
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Role
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -498,77 +521,77 @@ export function UserManagement() {
 
       {/* SECURITY OVERVIEW TAB */}
       {activeTab === 'security' && (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-in fade-in duration-300">
           {/* Security Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Privileged Officers</span>
+            <div className="p-5 rounded-3xl glass-panel border border-gray-200/80 dark:border-white/10 shadow-sm">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Privileged Officers</span>
               <p className="text-2xl font-black text-gray-900 dark:text-white mt-1">
                 {users.filter(u => ['super_admin', 'editor'].includes(u.role)).length}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Super Admins & Editors</p>
+              <p className="text-xs text-gray-500 mt-0.5">Super Admins & Editors</p>
             </div>
 
-            <div className="p-5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Users</span>
+            <div className="p-5 rounded-3xl glass-panel border border-gray-200/80 dark:border-white/10 shadow-sm">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Active Users</span>
               <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
                 {users.filter(u => u.status === 'active').length}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Total enabled logins</p>
+              <p className="text-xs text-gray-500 mt-0.5">Total enabled logins</p>
             </div>
 
-            <div className="p-5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Suspended Accounts</span>
+            <div className="p-5 rounded-3xl glass-panel border border-gray-200/80 dark:border-white/10 shadow-sm">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Suspended Accounts</span>
               <p className="text-2xl font-black text-red-600 dark:text-red-400 mt-1">
                 {users.filter(u => u.status === 'suspended').length}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Access locked out</p>
+              <p className="text-xs text-gray-500 mt-0.5">Access locked out</p>
             </div>
 
-            <div className="p-5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Security Alerts</span>
+            <div className="p-5 rounded-3xl glass-panel border border-gray-200/80 dark:border-white/10 shadow-sm">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Security Alerts</span>
               <p className="text-2xl font-black text-maroon-600 dark:text-neon-blue mt-1">
                 {alerts.length}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Unresolved security alerts</p>
+              <p className="text-xs text-gray-500 mt-0.5">Unresolved security alerts</p>
             </div>
           </div>
 
           {/* Security Alerts List */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6">
+          <div className="glass-panel rounded-3xl shadow-lg border border-gray-200/80 dark:border-white/10 p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-red-500" />
               Active Security Alerts
             </h3>
 
             {alerts.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
-                <p className="font-semibold text-gray-800 dark:text-gray-200">System Healthy</p>
+              <div className="p-10 text-center text-gray-500 dark:text-gray-400">
+                <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
+                <p className="font-bold text-gray-800 dark:text-gray-200">System Secure & Healthy</p>
                 <p className="text-xs mt-1">No unhandled security alerts or anomalies detected.</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {alerts.map((alert) => (
-                  <div key={alert.id} className="p-4 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 flex items-start justify-between gap-4">
+                  <div key={alert.id} className="p-4 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-950/30 flex items-start justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           alert.severity === 'critical' ? 'bg-red-600 text-white' : 'bg-amber-600 text-white'
                         }`}>
                           {alert.severity}
                         </span>
                         <span className="font-bold text-gray-900 dark:text-white text-sm">{alert.title}</span>
                       </div>
-                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">{alert.description}</p>
-                      <span className="text-[11px] text-gray-400 mt-2 block">{new Date(alert.created_at).toLocaleString()}</span>
+                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1.5">{alert.description}</p>
+                      <span className="text-[11px] text-gray-400 mt-2 block font-mono">{new Date(alert.created_at).toLocaleString()}</span>
                     </div>
                     <button
                       onClick={async () => {
                         await systemService.resolveSecurityAlert(alert.id);
                         loadData();
                       }}
-                      className="px-3 py-1.5 text-xs font-semibold bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shrink-0"
+                      className="px-4 py-2 text-xs font-bold bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shrink-0 shadow-sm"
                     >
                       Resolve
                     </button>

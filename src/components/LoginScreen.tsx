@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { logService } from '../services/log-service';
 import { LogIn, Loader2, Eye, EyeOff, ShieldAlert, Lock, Mail } from 'lucide-react';
 
 const MAX_ATTEMPTS = 5;
@@ -45,13 +46,24 @@ export function LoginScreen() {
     try {
       await signIn(email, password);
       setFailedAttempts(0);
+      logService.logLogin();
     } catch {
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
 
+      // Log threat / security anomaly
+      logService.logSecurityEvent('LOGIN_FAILED', {
+        email: email.trim().toLowerCase(),
+        attempt_number: newAttempts,
+      });
+
       if (newAttempts >= MAX_ATTEMPTS) {
         setLockoutRemaining(LOCKOUT_SECONDS);
         setFailedAttempts(0);
+        logService.logSecurityEvent('LOCKOUT_TRIGGERED', {
+          email: email.trim().toLowerCase(),
+          duration_seconds: LOCKOUT_SECONDS,
+        });
         setError(`Too many failed attempts. Please wait ${LOCKOUT_SECONDS} seconds.`);
       } else {
         // Uniform error response

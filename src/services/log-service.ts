@@ -51,4 +51,42 @@ export const logService = {
     if (error) throw error;
     return data || [];
   },
+
+  /**
+   * Read security events (auth anomalies, threats, password/MFA resets, status changes).
+   * Only super_admin can read (enforced by RLS).
+   */
+  async getSecurityEvents() {
+    try {
+      const { data, error } = await supabase
+        .from('security_events')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (error) {
+        console.warn('Security events fetch warning:', error.message);
+        return [];
+      }
+      return data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Log a security or threat event via security definer RPC.
+   */
+  async logSecurityEvent(eventType: string, details?: Record<string, unknown>, targetUserId?: string): Promise<void> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.rpc as any)('log_security_event', {
+        p_event_type: eventType,
+        p_target_user_id: targetUserId || null,
+        p_details: details || {},
+      });
+    } catch (err) {
+      console.warn('Security event logging non-fatal error:', err);
+    }
+  },
 };
