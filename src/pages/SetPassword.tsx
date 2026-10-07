@@ -14,34 +14,71 @@ export function SetPassword() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Check if user reached this page with a valid invite / recovery token or active recovery session
+    // Check if user reached this page with a valid invite / recovery token, PKCE code, or active recovery session
     const checkRecoverySession = async () => {
       try {
+        // 1. Check for active session
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setHasValidSession(true);
-        } else {
-          // Listen for PASSWORD_RECOVERY or SIGNED_IN event from Supabase URL fragment exchange
-          const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-            if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || (newSession && newSession.user)) {
-              setHasValidSession(true);
-              setSessionChecking(false);
-            }
-          });
-
-          // Give hash exchange 1.5 seconds to parse
-          setTimeout(() => {
-            setSessionChecking(false);
-          }, 1500);
-
-          return () => {
-            authListener.subscription.unsubscribe();
-          };
+          setSessionChecking(false);
+          return;
         }
+
+        // 2. Check for PKCE 'code' query parameter
+        const searchParams = new URLSearchParams(window.location.search);
+        const code = searchParams.get('code');
+        const tokenHash = searchParams.get('token_hash');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const type = (searchParams.get('type') as any) || 'invite';
+
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (!error && data.session) {
+            setHasValidSession(true);
+            setSessionChecking(false);
+            return;
+          }
+        }
+
+        // 3. Check for token_hash OTP verification
+        if (tokenHash) {
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type,
+          });
+          if (!error && data.session) {
+            setHasValidSession(true);
+            setSessionChecking(false);
+            return;
+          }
+        }
+
+        // 4. Listen for auth state change from URL hash fragment exchange
+        const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+          if (
+            event === 'PASSWORD_RECOVERY' || 
+            event === 'SIGNED_IN' || 
+            event === 'USER_UPDATED' ||
+            (newSession && newSession.user)
+          ) {
+            setHasValidSession(true);
+            setSessionChecking(false);
+          }
+        });
+
+        // Give hash exchange 2 seconds to parse before concluding
+        setTimeout(() => {
+          setSessionChecking(false);
+        }, 2000);
+
+        return () => {
+          authListener.subscription.unsubscribe();
+        };
       } catch (err) {
         console.warn('Session recovery check error:', err);
       } finally {
-        setSessionChecking(false);
+        setTimeout(() => setSessionChecking(false), 2000);
       }
     };
 

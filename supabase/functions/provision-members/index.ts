@@ -109,11 +109,16 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
+      // Determine redirect URL
+      const redirectUrl = origin.includes('#') 
+        ? `${origin}/auth/set-password` 
+        : `${origin}/#auth/set-password`;
+
       // Invite user via email
       const { data: inviteData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(
         member.email,
         {
-          redirectTo: `${origin}/auth/set-password`,
+          redirectTo: redirectUrl,
           data: {
             intended_role: 'member',
             linked_member_reg_no: member.reg_no,
@@ -125,17 +130,29 @@ Deno.serve(async (req: Request) => {
         results.push({
           reg_no,
           status: 'failed',
-          message: inviteError?.message || 'Failed to send invite',
+          message: inviteError?.message || 'Failed to send invite email',
         });
         continue;
       }
 
       const newUserId = inviteData.user.id;
 
+      // Determine unique username
+      let chosenUsername = (member.name_with_initials || member.full_name || `Member_${member.reg_no}`).trim();
+      const { data: existingName } = await serviceClient
+        .from('app_users')
+        .select('id')
+        .eq('username', chosenUsername)
+        .maybeSingle();
+
+      if (existingName) {
+        chosenUsername = `${chosenUsername} (${member.reg_no})`;
+      }
+
       // Insert app_users profile
       const { error: insertError } = await serviceClient.from('app_users').insert({
         id: newUserId,
-        username: member.name_with_initials || member.full_name,
+        username: chosenUsername,
         designation: 'Member',
         role: 'member',
         linked_member_reg_no: member.reg_no,
@@ -143,9 +160,14 @@ Deno.serve(async (req: Request) => {
       });
 
       if (insertError) {
+        console.error('Failed to create app_users record for', reg_no, insertError);
         // Compensating rollback: delete created auth user
         await serviceClient.auth.admin.deleteUser(newUserId);
-        results.push({ reg_no, status: 'failed', message: 'Profile initialization failed (rolled back)' });
+        results.push({ 
+          reg_no, 
+          status: 'failed', 
+          message: `Profile initialization failed: ${insertError.message}` 
+        });
         continue;
       }
 

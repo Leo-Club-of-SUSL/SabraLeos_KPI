@@ -21,14 +21,29 @@ function AppContent() {
   const [dbInitialized, setDbInitialized] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
 
-  // Check URL hash or path for auth routes (invite acceptance, password reset)
+  // Check URL hash, path, or search query for auth routes (invite acceptance, password reset, PKCE auth codes)
   const isAuthRoute = () => {
-    const hash = window.location.hash;
-    const path = window.location.pathname;
-    if (hash.includes('set-password') || path.includes('/auth/set-password') || hash.includes('type=recovery') || hash.includes('type=invite')) {
+    const hash = window.location.hash || '';
+    const path = window.location.pathname || '';
+    const search = window.location.search || '';
+
+    if (
+      hash.includes('set-password') ||
+      path.includes('/auth/set-password') ||
+      path.includes('set-password') ||
+      hash.includes('type=recovery') ||
+      hash.includes('type=invite') ||
+      hash.includes('type=signup') ||
+      hash.includes('access_token=') ||
+      search.includes('type=recovery') ||
+      search.includes('type=invite') ||
+      search.includes('type=signup') ||
+      search.includes('token_hash') ||
+      search.includes('code=')
+    ) {
       return 'set-password';
     }
-    if (hash.includes('forgot-password') || path.includes('/auth/forgot-password')) {
+    if (hash.includes('forgot-password') || path.includes('/auth/forgot-password') || search.includes('forgot-password')) {
       return 'forgot-password';
     }
     return null;
@@ -37,11 +52,15 @@ function AppContent() {
   const [authRoute, setAuthRoute] = useState<string | null>(isAuthRoute());
 
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleUrlChange = () => {
       setAuthRoute(isAuthRoute());
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
   }, []);
 
   useEffect(() => {

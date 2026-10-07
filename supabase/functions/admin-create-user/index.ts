@@ -75,11 +75,13 @@ Deno.serve(async (req: Request) => {
       return errorResponse('Invalid role', 400, corsHeaders);
     }
 
-    const origin = req.headers.get('Origin') || 'https://nexus-kpi.pages.dev';
+    const redirectUrl = origin.includes('#') 
+      ? `${origin}/auth/set-password` 
+      : `${origin}/#auth/set-password`;
 
     // 3. Send invite email — password must NEVER be chosen or set by admin
     const { data: inviteData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${origin}/auth/set-password`,
+      redirectTo: redirectUrl,
       data: {
         intended_role: role,
         created_by_admin: true,
@@ -111,7 +113,7 @@ Deno.serve(async (req: Request) => {
       // Compensating rollback
       await serviceClient.auth.admin.deleteUser(newUserId);
       console.error('Profile insert error:', insertError.message);
-      return errorResponse('Failed to create user profile. Auth user rolled back.', 500, corsHeaders);
+      return errorResponse(`Failed to create user profile: ${insertError.message}`, 500, corsHeaders);
     }
 
     return new Response(JSON.stringify({ success: true, user: profileData }), {
