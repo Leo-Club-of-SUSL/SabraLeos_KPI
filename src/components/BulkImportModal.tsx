@@ -16,7 +16,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
   const handleDownloadTemplate = async () => {
     try {
       await bulkImportService.downloadTemplate();
-    } catch (error) {
+    } catch {
       alert('Failed to download template. Please check your connection.');
     }
   };

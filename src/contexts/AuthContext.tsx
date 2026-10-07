@@ -5,13 +5,16 @@ import { userService } from '../services/user-service';
 import { logService } from '../services/log-service';
 import type { User } from '@supabase/supabase-js';
 
-const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+// Officers: 15-minute idle timeout. Members: 30-minute idle timeout.
+const OFFICER_TIMEOUT_MS = 15 * 60 * 1000;
+const MEMBER_TIMEOUT_MS  = 30 * 60 * 1000;
+const OFFICER_ROLES = new Set(['viewer', 'editor', 'super_admin']);
 
 interface AuthContextType {
   user: User | null;
   appUser: AppUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string, captchaToken?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -23,12 +26,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // One-time migration: Clear old persistent localStorage sessions
-  // to enforce the new sessionStorage-only policy immediately.
+  // Clear old local session tokens on mount
   useEffect(() => {
     try {
       const keys = Object.keys(localStorage);
-      keys.forEach(key => {
+      keys.forEach((key) => {
         if (key.startsWith('sb-') || key.includes('supabase')) {
           localStorage.removeItem(key);
         }
@@ -38,7 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadUser = async () => {
+  const signOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Sign out error:', err);
+    } finally {
+      setUser(null);
+      setAppUser(null);
+    }
+  }, []);
+
+  const loadUser = useCallback(async () => {
     setLoading(true);
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -46,10 +59,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (authUser) {
         try {
+          const sessionCtx = await userService.getSessionContext();
+
+          // Fail closed: No valid role or suspended account -> terminate session immediately
+          if (!sessionCtx || !sessionCtx.valid || sessionCtx.status === 'suspended') {
+            await supabase.auth.signOut();
+            setUser(null);
+            setAppUser(null);
+            return;
+          }
+
           const userData = await userService.getCurrentUser();
           setAppUser(userData);
         } catch (err) {
-          console.error('Error loading app user details:', err);
+          console.error('Error validating session context:', err);
+          await supabase.auth.signOut();
+          setUser(null);
           setAppUser(null);
         }
       } else {
@@ -62,75 +87,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      (async () => {
-        await loadUser();
-      })();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setAppUser(null);
+      } else {
+        void loadUser();
+      }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadUser]);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, captchaToken?: string): Promise<void> => {
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim().toLowerCase(),
       password,
+      options: captchaToken ? { captchaToken } : undefined,
     });
 
     if (error) {
-      throw error;
+      // Uniform error message
+      throw new Error('Invalid email or password');
     }
 
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (authUser) {
-      const userData = await userService.getCurrentUser();
-      await logService.log({
-        user_id: authUser.id,
-        user_name: userData?.username || authUser.email,
-        action: 'LOGIN',
-        details: { method: 'password' }
-      });
+    // Check session context
+    const sessionCtx = await userService.getSessionContext();
+    if (!sessionCtx || !sessionCtx.valid || sessionCtx.status === 'suspended') {
+      await supabase.auth.signOut();
+      throw new Error('Invalid email or password');
     }
 
     await loadUser();
+
+    // Log officer login
+    try {
+      await logService.logLogin();
+    } catch {
+      // Non-fatal
+    }
   };
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    setUser(null);
-    setAppUser(null);
-  };
-
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     await loadUser();
-  };
+  }, [loadUser]);
 
-  // --- Session idle timeout ---
+  // Session idle timeout — per role
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (user) {
+      const role = appUser?.role ?? '';
+      const timeout = OFFICER_ROLES.has(role) ? OFFICER_TIMEOUT_MS : MEMBER_TIMEOUT_MS;
       idleTimerRef.current = setTimeout(() => {
-        signOut();
-      }, SESSION_TIMEOUT_MS);
+        void signOut();
+      }, timeout);
     }
-  }, [user]);
+  }, [user, appUser?.role, signOut]);
 
   useEffect(() => {
     if (!user) return;
 
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
     events.forEach((event) => window.addEventListener(event, resetIdleTimer));
-    resetIdleTimer(); // start timer on mount
+    resetIdleTimer();
 
     return () => {
       events.forEach((event) => window.removeEventListener(event, resetIdleTimer));

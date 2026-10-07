@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LoginScreen } from './components/LoginScreen';
+import { SetPassword } from './pages/SetPassword';
+import { ForgotPassword } from './pages/ForgotPassword';
 
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './pages/Dashboard';
@@ -9,7 +11,7 @@ import { Members } from './pages/Members';
 import { Reports } from './pages/Reports';
 import { UserManagement } from './pages/UserManagement';
 import { AccountNotFound } from './components/AccountNotFound';
-import { initializeDatabase, seedMockData } from './lib/db-init';
+import { initializeDatabase } from './lib/db-init';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
@@ -19,13 +21,61 @@ function AppContent() {
   const [dbInitialized, setDbInitialized] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
 
+  // Check URL hash, path, or search query for auth routes (invite acceptance, password reset, PKCE auth codes)
+  const isAuthRoute = () => {
+    const hash = window.location.hash || '';
+    const path = window.location.pathname || '';
+    const search = window.location.search || '';
+
+    if (
+      hash.includes('set-password') ||
+      path.includes('/auth/set-password') ||
+      path.includes('set-password') ||
+      hash.includes('type=recovery') ||
+      hash.includes('type=invite') ||
+      hash.includes('type=signup') ||
+      hash.includes('access_token=') ||
+      search.includes('type=recovery') ||
+      search.includes('type=invite') ||
+      search.includes('type=signup') ||
+      search.includes('token_hash') ||
+      search.includes('code=')
+    ) {
+      return 'set-password';
+    }
+    if (hash.includes('forgot-password') || path.includes('/auth/forgot-password') || search.includes('forgot-password')) {
+      return 'forgot-password';
+    }
+    return null;
+  };
+
+  const [authRoute, setAuthRoute] = useState<string | null>(isAuthRoute());
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      setAuthRoute(isAuthRoute());
+    };
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
+  }, []);
+
   useEffect(() => {
     const initDB = async () => {
       const initialized = await initializeDatabase();
       setDbInitialized(initialized);
 
       if (initialized) {
-        // await seedMockData();
+        // Load custom tier thresholds from system settings / cache
+        try {
+          const { systemService } = await import('./services/system-service');
+          await systemService.getTierThresholds();
+        } catch (e) {
+          console.warn('Could not load tier thresholds on init:', e);
+        }
       }
 
       setDbLoading(false);
@@ -38,6 +88,14 @@ function AppContent() {
     setCurrentPage(page);
     setPageData(data);
   };
+
+  if (authRoute === 'set-password') {
+    return <SetPassword />;
+  }
+
+  if (authRoute === 'forgot-password') {
+    return <ForgotPassword />;
+  }
 
   if (loading || dbLoading) {
     return (
@@ -88,6 +146,7 @@ function AppContent() {
           <Members
             initialSearch={(pageData as { search?: string })?.search}
             initialAction={(pageData as { action?: string })?.action}
+            initialTier={(pageData as { tier?: string })?.tier}
           />
         )}
         {currentPage === 'reports' && <Reports />}

@@ -1,0 +1,22 @@
+project_id = "xfansfglsejyeyriexnj"
+
+[functions.provision-members]
+verify_jwt = true
+
+[functions.admin-create-user]
+verify_jwt = true
+
+[functions.admin-send-password-reset]
+verify_jwt = true
+
+[functions.admin-delete-user]
+verify_jwt = true
+
+[functions.admin-set-user-status]
+verify_jwt = true
+
+[functions.admin-change-user-email]
+verify_jwt = true
+
+[functions.admin-reset-mfa]
+verify_jwt = true

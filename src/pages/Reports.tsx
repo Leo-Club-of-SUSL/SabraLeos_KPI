@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
 import { systemService } from '../services/system-service';
-import { Filter, Download, Calendar, Users as UsersIcon, TrendingUp } from 'lucide-react';
+import { Filter, Download, Calendar, Users as UsersIcon, TrendingUp, Award } from 'lucide-react';
 import type { Member, Contribution, Faculty } from '../types/database';
 import { ExportOptionsModal, type ColumnOption } from '../components/ExportOptionsModal';
+import { TierBadge } from '../components/TierBadge';
+import { getTier, TIERS_CONFIG } from '../lib/tier-calculator';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -20,8 +22,8 @@ export function Reports() {
     endDate: '',
     minProjects: '',
     faculty: '',
+    tier: '',
   });
-
 
   const loadData = async () => {
     try {
@@ -42,17 +44,19 @@ export function Reports() {
     }
   };
 
-
   useEffect(() => {
     loadData();
   }, []);
-
 
   useEffect(() => {
     let filtered = [...members];
 
     if (filters.faculty) {
       filtered = filtered.filter((m) => m.faculty === filters.faculty);
+    }
+
+    if (filters.tier) {
+      filtered = filtered.filter((m) => getTier(m.total_points).key === filters.tier);
     }
 
     if (filters.startDate || filters.endDate || filters.minProjects) {
@@ -93,15 +97,12 @@ export function Reports() {
     setFilteredMembers(filtered);
   }, [filters, members, contributions]);
 
-
-
-
-
   const [showExportModal, setShowExportModal] = useState(false);
 
   const availableColumns: ColumnOption[] = [
     { key: 'reg_no', label: 'Reg No' },
     { key: 'name_with_initials', label: 'Name' },
+    { key: 'tier', label: 'Standing Tier' },
     { key: 'faculty', label: 'Faculty' },
     { key: 'batch', label: 'Batch' },
     { key: 'total_points', label: 'Total Points' },
@@ -121,6 +122,7 @@ export function Reports() {
     const rows = filteredMembers.map((member) => {
       return selectedColumns.map(key => {
         if (key === 'project_count') return memberContributions.get(member.reg_no) || 0;
+        if (key === 'tier') return getTier(member.total_points).name;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return (member as any)[key];
       });
@@ -143,22 +145,19 @@ export function Reports() {
       a.click();
       window.URL.revokeObjectURL(url);
     } else {
-      // PDF Export
       const doc = new jsPDF();
 
-      // Add Title
       doc.setFontSize(18);
-      doc.setTextColor(128, 0, 0); // Maroon color
+      doc.setTextColor(128, 0, 0);
       doc.text('Nexus KPI - Member Report', 14, 22);
 
-      // Add Date
       doc.setFontSize(10);
       doc.setTextColor(100);
       doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 30);
 
-      // Add Filters Info if any
       const activeFilters = [];
       if (filters.faculty) activeFilters.push(`Faculty: ${filters.faculty}`);
+      if (filters.tier) activeFilters.push(`Tier: ${TIERS_CONFIG[filters.tier as keyof typeof TIERS_CONFIG]?.name || filters.tier}`);
       if (filters.startDate) activeFilters.push(`Start: ${filters.startDate}`);
       if (filters.endDate) activeFilters.push(`End: ${filters.endDate}`);
       if (filters.minProjects) activeFilters.push(`Min Projects: ${filters.minProjects}`);
@@ -167,7 +166,6 @@ export function Reports() {
         doc.text(`Filters: ${activeFilters.join(', ')}`, 14, 36);
       }
 
-      // Generate Table
       autoTable(doc, {
         head: [headers],
         body: rows,
@@ -177,19 +175,18 @@ export function Reports() {
           cellPadding: 3,
         },
         headStyles: {
-          fillColor: [128, 0, 0], // Maroon
+          fillColor: [128, 0, 0],
           textColor: [255, 255, 255],
           fontStyle: 'bold',
         },
         alternateRowStyles: {
-          fillColor: [249, 245, 245], // Light maroon tint
+          fillColor: [249, 245, 245],
         },
       });
 
       doc.save(`nexus-report-${new Date().toISOString().split('T')[0]}.pdf`);
     }
   };
-
 
   if (loading) {
     return (
@@ -204,13 +201,20 @@ export function Reports() {
     return new Set(memberContribs.map((c) => c.project_name)).size;
   };
 
+  // Tier counts
+  const tierDistribution = members.reduce((acc, m) => {
+    const t = getTier(m.total_points).key;
+    acc[t] = (acc[t] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Reports</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Reports & Standings</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Filter and analyze member contributions
+            Filter and analyze member contributions and recognition tiers
           </p>
         </div>
 
@@ -219,8 +223,40 @@ export function Reports() {
           className="flex items-center gap-2 px-6 py-3 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200 shadow-md"
         >
           <Download className="w-5 h-5" />
-          Export to CSV
+          Export Report
         </button>
+      </div>
+
+      {/* Tier Distribution Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {(['platinum', 'gold', 'silver', 'bronze', 'official', 'prospect'] as const).map((tKey) => {
+          const t = TIERS_CONFIG[tKey];
+          const count = tierDistribution[tKey] || 0;
+          return (
+            <div
+              key={tKey}
+              onClick={() => setFilters(f => ({ ...f, tier: f.tier === tKey ? '' : tKey }))}
+              className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+                filters.tier === tKey
+                  ? 'ring-2 ring-maroon-500 bg-maroon-50 dark:bg-maroon-950/40 border-maroon-400'
+                  : 'bg-white dark:bg-dark-surface border-gray-200 dark:border-gray-800 hover:border-maroon-300'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  {t.shortName}
+                </span>
+                <TierBadge tierKey={tKey} size="xs" showIcon={false} />
+              </div>
+              <p className="text-2xl font-black text-gray-900 dark:text-white mt-1">
+                {count}
+              </p>
+              <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                {t.minPoints}+ pts
+              </p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-200 dark:border-gray-700">
@@ -229,7 +265,7 @@ export function Reports() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               <Calendar className="w-4 h-4 inline mr-1" />
@@ -282,18 +318,38 @@ export function Reports() {
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="">All Faculties</option>
-            {faculties.map((f) => (
-              <option key={f.id} value={f.name}>
-                {f.name}
-              </option>
-            ))}
-          </select>
+              {faculties.map((f) => (
+                <option key={f.id} value={f.name}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <Award className="w-4 h-4 inline mr-1" />
+              Standing Tier
+            </label>
+            <select
+              value={filters.tier}
+              onChange={(e) => setFilters({ ...filters, tier: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="">All Tiers</option>
+              <option value="platinum">Platinum Leo (800+)</option>
+              <option value="gold">Gold Leo (500+)</option>
+              <option value="silver">Silver Leo (300+)</option>
+              <option value="bronze">Bronze Leo (150+)</option>
+              <option value="official">Official Member (50+)</option>
+              <option value="prospect">Prospect (&lt;50)</option>
+            </select>
           </div>
         </div>
 
-        {(filters.startDate || filters.endDate || filters.minProjects || filters.faculty) && (
+        {(filters.startDate || filters.endDate || filters.minProjects || filters.faculty || filters.tier) && (
           <button
-            onClick={() => setFilters({ startDate: '', endDate: '', minProjects: '', faculty: '' })}
+            onClick={() => setFilters({ startDate: '', endDate: '', minProjects: '', faculty: '', tier: '' })}
             className="mt-4 text-sm text-maroon-600 dark:text-maroon-400 hover:underline"
           >
             Clear all filters
@@ -318,6 +374,9 @@ export function Reports() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Name
                 </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Standing Tier
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Faculty
                 </th>
@@ -327,7 +386,7 @@ export function Reports() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Projects
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Points
                 </th>
               </tr>
@@ -335,7 +394,7 @@ export function Reports() {
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {filteredMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                     No members found matching the filters
                   </td>
                 </tr>
@@ -351,6 +410,9 @@ export function Reports() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                       {member.name_with_initials}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <TierBadge points={member.total_points} size="xs" />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                       {member.faculty}
                     </td>
@@ -360,7 +422,7 @@ export function Reports() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                       {getMemberProjectCount(member.reg_no)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-maroon-600 dark:text-maroon-400">
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-maroon-600 dark:text-maroon-400">
                       {member.total_points}
                     </td>
                   </tr>
@@ -371,13 +433,12 @@ export function Reports() {
         </div>
       </div>
 
-
       <ExportOptionsModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
         availableColumns={availableColumns}
       />
-    </div >
+    </div>
   );
 }

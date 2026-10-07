@@ -72,38 +72,38 @@ describe('sanitizeSearchQuery', () => {
 // validatePassword
 // =========================================================
 describe('validatePassword', () => {
-    it('rejects a short password', () => {
-        const result = validatePassword('Ab1!');
+    it('rejects a short password (< 10 chars)', () => {
+        const result = validatePassword('Ab1!5678');
         expect(result.isValid).toBe(false);
-        expect(result.errors).toContain('At least 8 characters');
+        expect(result.errors).toContain('At least 10 characters');
     });
 
     it('rejects password without uppercase', () => {
-        const result = validatePassword('abcdefg1!');
+        const result = validatePassword('abcdefgh1!');
         expect(result.isValid).toBe(false);
         expect(result.errors).toContain('At least 1 uppercase letter');
     });
 
     it('rejects password without lowercase', () => {
-        const result = validatePassword('ABCDEFG1!');
+        const result = validatePassword('ABCDEFGH1!');
         expect(result.isValid).toBe(false);
         expect(result.errors).toContain('At least 1 lowercase letter');
     });
 
     it('rejects password without a number', () => {
-        const result = validatePassword('Abcdefgh!');
+        const result = validatePassword('Abcdefghij!');
         expect(result.isValid).toBe(false);
         expect(result.errors).toContain('At least 1 number');
     });
 
     it('rejects password without a special character', () => {
-        const result = validatePassword('Abcdefg1');
+        const result = validatePassword('Abcdefghi1');
         expect(result.isValid).toBe(false);
         expect(result.errors).toContain('At least 1 special character (!@#$%^&*...)');
     });
 
-    it('accepts a valid password (8 chars)', () => {
-        const result = validatePassword('Abcdef1!');
+    it('accepts a valid password (10+ chars)', () => {
+        const result = validatePassword('Abcdefgh1!');
         expect(result.isValid).toBe(true);
         expect(result.errors).toHaveLength(0);
         expect(result.strength).toBe('fair');

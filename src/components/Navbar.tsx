@@ -10,8 +10,10 @@ import {
   Moon,
   Sun,
   Menu,
-  X
+  X,
+  KeyRound,
 } from 'lucide-react';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 interface NavbarProps {
   currentPage?: string;
@@ -22,12 +24,13 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
   const { appUser, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   const navigation = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'editor', 'viewer'] },
     { id: 'members', label: 'Members', icon: Users, roles: ['super_admin', 'editor', 'viewer'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['super_admin', 'editor', 'viewer'] },
-    { id: 'users', label: 'User Management', icon: UserCog, roles: ['super_admin'] },
+    { id: 'users', label: 'Settings', icon: UserCog, roles: ['super_admin'] },
   ];
 
   const filteredNav = navigation.filter((item) =>
@@ -90,6 +93,15 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
             </div>
 
             <button
+              onClick={() => setShowPasswordModal(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-600 dark:text-gray-400 transition-colors duration-200"
+              title="Change Password"
+              aria-label="Change Password"
+            >
+              <KeyRound className="w-5 h-5" />
+            </button>
+
+            <button
               onClick={(e) => toggleTheme(e)}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-600 dark:text-gray-400 transition-colors duration-200"
               aria-label="Toggle theme"
@@ -140,6 +152,16 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
                 );
               })}
               <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setShowPasswordModal(true);
+                }}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors duration-200"
+              >
+                <KeyRound className="w-5 h-5" />
+                <span className="font-medium">Change Password</span>
+              </button>
+              <button
                 onClick={signOut}
                 className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors duration-200 mt-2 border-t border-gray-200 dark:border-white/5 pt-4"
               >
@@ -150,6 +172,10 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
           </div>
         )}
       </div>
+
+      {showPasswordModal && (
+        <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+      )}
     </nav>
   );
 }

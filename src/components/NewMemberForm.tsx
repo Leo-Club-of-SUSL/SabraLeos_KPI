@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { systemService } from '../services/system-service';
-import { Camera, Loader2 } from 'lucide-react';
+import { userService } from '../services/user-service';
+import { Camera, Loader2, EyeOff, MailCheck } from 'lucide-react';
 import { validatePhotoFile, validateRegNo, validatePhoneNumber, sanitizeTextInput } from '../lib/sanitize';
-import type { Member, Faculty, Batch as BatchType } from '../types/database';
+import type { Member, Faculty, Batch as BatchType, MemberStatus } from '../types/database';
 
 interface NewMemberFormProps {
   initialRegNo?: string;
@@ -20,7 +21,13 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     batch: '',
     faculty: '',
     whatsapp: '',
+    email: '',
+    member_status: 'active' as MemberStatus,
+    leaderboard_opt_out: false,
+    display_alias: '',
   });
+
+  const [inviteAccount, setInviteAccount] = useState(true);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [photoError, setPhotoError] = useState('');
@@ -50,7 +57,6 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     loadSystemData();
   }, []);
 
-
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPhotoError('');
     const file = e.target.files?.[0];
@@ -77,6 +83,9 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     if (!formData.batch) errors.batch = 'Batch selection is required';
     if (!formData.faculty) errors.faculty = 'Faculty selection is required';
     if (!validatePhoneNumber(formData.whatsapp)) errors.whatsapp = 'Invalid phone number format';
+    if (inviteAccount && !formData.email) {
+      errors.email = 'Email address is required to invite member to portal';
+    }
     
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -103,12 +112,30 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
         reg_no: sanitizeTextInput(formData.reg_no),
         full_name: sanitizeTextInput(formData.full_name),
         name_with_initials: sanitizeTextInput(formData.name_with_initials),
-        my_lci_num: sanitizeTextInput(formData.my_lci_num),
+        my_lci_num: sanitizeTextInput(formData.my_lci_num) || null,
         batch: sanitizeTextInput(formData.batch),
         faculty: formData.faculty,
         whatsapp: sanitizeTextInput(formData.whatsapp),
+        email: formData.email ? sanitizeTextInput(formData.email) : null,
+        member_status: formData.member_status,
+        leaderboard_opt_out: formData.leaderboard_opt_out,
+        display_alias: formData.display_alias ? sanitizeTextInput(formData.display_alias) : null,
         photo_url: photoUrl,
       });
+
+      // Send portal invite if requested
+      if (formData.email && inviteAccount) {
+        try {
+          const results = await userService.provisionMembers([member.reg_no]);
+          const res = results[0];
+          if (res?.status === 'failed') {
+            alert(`Member created, but invite could not be sent: ${res.message || 'Service unavailable'}`);
+          }
+        } catch (accountErr) {
+          console.warn('Member created, invite error:', accountErr);
+          alert(`Member created, but invitation email could not be sent: ${accountErr instanceof Error ? accountErr.message : 'Account service unavailable'}`);
+        }
+      }
 
       onSuccess(member);
     } catch (err) {
@@ -143,7 +170,7 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept="image/jpeg,image/png,image/webp"
             onChange={handlePhotoChange}
             className="hidden"
           />
@@ -257,6 +284,34 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Email Address
+          </label>
+          <input
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            placeholder="member@example.com"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          />
+          {fieldErrors.email && <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Member Status
+          </label>
+          <select
+            value={formData.member_status}
+            onChange={(e) => setFormData({ ...formData, member_status: e.target.value as MemberStatus })}
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          >
+            <option value="active">Active Member</option>
+            <option value="alumni">Alumni</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             MyLCI Number
           </label>
           <input
@@ -266,6 +321,77 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
             placeholder="LCI123456"
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
+        </div>
+
+        {/* Member Portal Login Account Section */}
+        <div className="md:col-span-2 p-5 rounded-xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <MailCheck className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
+              <div>
+                <span className="font-bold text-gray-900 dark:text-white text-sm">
+                  Send Portal Invitation Email
+                </span>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Sends a secure, time-limited invite link to the member to set their own password
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={inviteAccount}
+                onChange={(e) => setInviteAccount(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-maroon-600"></div>
+            </label>
+          </div>
+
+          {inviteAccount && !formData.email && (
+            <div className="pt-2 border-t border-maroon-200/60 dark:border-maroon-800/60">
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                <span>ℹ️ Please enter the member's <strong>Email Address</strong> above to send the invitation email.</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Leaderboard Privacy Section */}
+        <div className="md:col-span-2 p-4 rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <EyeOff className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              <div>
+                <span className="font-medium text-gray-900 dark:text-white text-sm">Leaderboard Opt-Out</span>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Hide real identity or appear anonymously on public leaderboards</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.leaderboard_opt_out}
+                onChange={(e) => setFormData({ ...formData, leaderboard_opt_out: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-maroon-600"></div>
+            </label>
+          </div>
+
+          {formData.leaderboard_opt_out && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Display Alias (Optional)
+              </label>
+              <input
+                type="text"
+                value={formData.display_alias}
+                onChange={(e) => setFormData({ ...formData, display_alias: e.target.value })}
+                placeholder="e.g. Anonymous Leo"
+                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+          )}
         </div>
       </div>
 
