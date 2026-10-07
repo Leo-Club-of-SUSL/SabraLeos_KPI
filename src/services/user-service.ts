@@ -85,9 +85,33 @@ export const userService = {
   },
 
   async getSessionContext(): Promise<SessionContext | null> {
-    const { data, error } = await supabase.rpc('get_my_session_context');
-    if (error || !data) return null;
-    return (data as unknown) as SessionContext;
+    try {
+      const { data, error } = await supabase.rpc('get_my_session_context');
+      if (!error && data) {
+        return (data as unknown) as SessionContext;
+      }
+    } catch {
+      // Fallback if RPC fails or is unavailable
+    }
+
+    try {
+      const user = await this.getCurrentUser();
+      if (!user) return null;
+
+      return {
+        valid: (user.status || 'active') === 'active',
+        id: user.id,
+        username: user.username,
+        designation: user.designation,
+        role: user.role,
+        status: (user.status || 'active') as 'active' | 'suspended',
+        linked_member_reg_no: user.linked_member_reg_no,
+        created_at: user.created_at,
+      };
+    } catch (err) {
+      console.error('Failed to get session context via fallback:', err);
+      return null;
+    }
   },
 
   async getAll(): Promise<AppUser[]> {
