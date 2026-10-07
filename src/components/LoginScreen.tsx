@@ -48,7 +48,6 @@ export function LoginScreen() {
     try {
       await signIn(email, password);
       setFailedAttempts(0);
-      logService.logLogin();
     } catch {
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);

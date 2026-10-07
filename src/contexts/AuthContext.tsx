@@ -35,7 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (user) {
-        void logService.logSecurityEvent('LOGOUT', { user_id: user.id, username: appUser?.username }, user.id);
+        try {
+          await logService.logSecurityEvent('LOGOUT', { user_id: user.id, username: appUser?.username }, user.id);
+        } catch {
+          // non-fatal
+        }
       }
       systemService.clearStaticCache();
       await supabase.auth.signOut();

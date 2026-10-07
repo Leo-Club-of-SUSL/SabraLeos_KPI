@@ -120,11 +120,19 @@ export function SystemLogs() {
       if (evt.includes('TIER')) cat = 'tier';
       else if (evt.includes('ROLE') || evt.includes('PRIVILEGE') || evt.includes('USER')) cat = 'access';
 
+      const detailsObj = (item.details as Record<string, unknown>) || null;
+      const actorNameFromDetails = detailsObj?.username || detailsObj?.user_name || detailsObj?.email;
+      const actorName = String(
+        actorNameFromDetails ||
+        (item.user_name as string) ||
+        (item.actor_id as string ? `Officer (${String(item.actor_id).substring(0, 8)})` : 'Security System')
+      );
+
       return {
         id: `sec-${item.id || Math.random()}`,
         source: 'security',
         timestamp: String(item.created_at || (item as any).timestamp || new Date().toISOString()),
-        actor_name: (item.actor_id as string) ? `Officer (${String(item.actor_id).substring(0, 8)})` : 'Security Guardian',
+        actor_name: actorName,
         actor_id: (item.actor_id as string) || null,
         action: evt,
         category: cat,
@@ -132,7 +140,7 @@ export function SystemLogs() {
         entity_type: 'Security Event',
         entity_id: (item.user_id as string) || null,
         ip_address: (item.ip_address as string) || null,
-        details: (item.details as Record<string, unknown>) || null,
+        details: detailsObj,
       };
     });
 

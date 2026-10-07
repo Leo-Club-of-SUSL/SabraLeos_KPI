@@ -203,9 +203,22 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_actor_id UUID;
+  v_actor_id  UUID;
+  v_username  TEXT;
+  v_details   JSONB;
 BEGIN
   v_actor_id := auth.uid();
+  v_details  := COALESCE(p_details, '{}'::jsonb);
+
+  IF v_actor_id IS NOT NULL AND NOT (v_details ? 'username') THEN
+    SELECT username INTO v_username
+    FROM public.app_users
+    WHERE id = v_actor_id;
+
+    IF v_username IS NOT NULL THEN
+      v_details := v_details || jsonb_build_object('username', v_username);
+    END IF;
+  END IF;
 
   INSERT INTO public.security_events (
     event_type,
@@ -218,7 +231,7 @@ BEGIN
     p_event_type,
     COALESCE(p_target_user_id, v_actor_id),
     v_actor_id,
-    p_details,
+    v_details,
     NOW()
   );
 END;
