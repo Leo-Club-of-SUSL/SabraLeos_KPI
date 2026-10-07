@@ -78,11 +78,19 @@ export function SystemLogs() {
       if (act.includes('DELETE') || act.includes('REMOVE')) sev = 'warning';
       if (act.includes('DROP') || act.includes('PURGE')) sev = 'high';
 
+      let details = (item.details as Record<string, unknown>) || null;
+      if (!details && (item.old_value || item.new_value)) {
+        details = {
+          old_value: item.old_value,
+          new_value: item.new_value,
+        };
+      }
+
       return {
         id: `act-${item.id || Math.random()}`,
         source: 'activity',
         timestamp: String(item.timestamp || item.created_at || new Date().toISOString()),
-        actor_name: String(item.user_name || 'System Operator'),
+        actor_name: String(item.user_name || (item.user_id ? `User (${String(item.user_id).substring(0, 8)})` : 'System Operator')),
         actor_id: (item.user_id as string) || null,
         action: act,
         category: cat,
@@ -90,7 +98,7 @@ export function SystemLogs() {
         entity_type: (item.entity_type as string) || null,
         entity_id: (item.entity_id as string) || null,
         ip_address: (item.ip_address as string) || null,
-        details: (item.details as Record<string, unknown>) || null,
+        details,
       };
     });
 
@@ -115,7 +123,7 @@ export function SystemLogs() {
       return {
         id: `sec-${item.id || Math.random()}`,
         source: 'security',
-        timestamp: String(item.created_at || new Date().toISOString()),
+        timestamp: String(item.created_at || (item as any).timestamp || new Date().toISOString()),
         actor_name: (item.actor_id as string) ? `Officer (${String(item.actor_id).substring(0, 8)})` : 'Security Guardian',
         actor_id: (item.actor_id as string) || null,
         action: evt,
