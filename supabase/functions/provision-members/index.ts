@@ -1,27 +1,15 @@
 // supabase/functions/provision-members/index.ts
-// Invite-only member provisioning (super_admin only)
+// Direct member portal account provisioning with manual mock/temporary credentials — no email sending required
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const ALLOWED_ORIGINS = [
-  'http://localhost:5173',
-  'http://localhost:4173',
-  'https://nexus-kpi.pages.dev',
-  'https://kpi.sapraleos.org',
-];
-
-function getCorsHeaders(req: Request) {
-  const origin = req.headers.get('Origin') || '';
-  const isAllowed = ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.pages.dev');
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
-}
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
 Deno.serve(async (req: Request) => {
-  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -29,21 +17,21 @@ Deno.serve(async (req: Request) => {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return errorResponse('Missing authorization header', 401, corsHeaders);
+      return errorResponse('Missing authorization header', 401);
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-    // 1. Verify caller is super_admin
+    // 1. Verify caller is super_admin or editor
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
     const { data: { user: callerAuth }, error: callerError } = await callerClient.auth.getUser();
     if (callerError || !callerAuth) {
-      return errorResponse('Unauthorized', 401, corsHeaders);
+      return errorResponse('Unauthorized', 401);
     }
 
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
@@ -53,26 +41,32 @@ Deno.serve(async (req: Request) => {
       .eq('id', callerAuth.id)
       .single();
 
-    if (profileError || !callerProfile || callerProfile.role !== 'super_admin' || callerProfile.status !== 'active') {
-      return errorResponse('Forbidden: Only active super_admin can provision members', 403, corsHeaders);
+    if (
+      profileError ||
+      !callerProfile ||
+      !['super_admin', 'editor'].includes(callerProfile.role) ||
+      callerProfile.status !== 'active'
+    ) {
+      return errorResponse('Forbidden: Active Super Admin or Editor access required', 403);
     }
 
     // 2. Validate input
     const body = await req.json();
-    const { reg_nos } = body;
+    const { reg_nos, default_password, passwords } = body;
 
     if (!Array.isArray(reg_nos) || reg_nos.length === 0) {
-      return errorResponse('reg_nos array is required', 400, corsHeaders);
+      return errorResponse('reg_nos array is required', 400);
     }
 
     if (reg_nos.length > 100) {
-      return errorResponse('Batch size cannot exceed 100 members', 400, corsHeaders);
+      return errorResponse('Batch size cannot exceed 100 members', 400);
     }
 
-    const origin = req.headers.get('Origin') || 'https://nexus-kpi.pages.dev';
     const results: Array<{
       reg_no: string;
-      status: 'invited' | 'already_provisioned' | 'no_email' | 'failed';
+      status: 'provisioned' | 'already_provisioned' | 'no_email' | 'failed';
+      email?: string;
+      temporaryPassword?: string;
       message?: string;
     }> = [];
 
@@ -88,7 +82,7 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (memberError || !member) {
-        results.push({ reg_no, status: 'failed', message: 'Member not found' });
+        results.push({ reg_no, status: 'failed', message: 'Member not found in database' });
         continue;
       }
 
@@ -109,33 +103,36 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      // Determine redirect URL
-      const redirectUrl = origin.includes('#') 
-        ? `${origin}/auth/set-password` 
-        : `${origin}/#auth/set-password`;
+      // Determine mock password
+      const cleanReg = member.reg_no.replace(/[^a-zA-Z0-9]/g, '');
+      const memberPassword = (passwords && passwords[reg_no])
+        ? String(passwords[reg_no]).trim()
+        : (default_password && default_password.trim().length >= 6)
+          ? default_password.trim()
+          : `Leo@${cleanReg || 'Member'}2026!`;
 
-      // Invite user via email
-      const { data: inviteData, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(
-        member.email,
-        {
-          redirectTo: redirectUrl,
-          data: {
-            intended_role: 'member',
-            linked_member_reg_no: member.reg_no,
-          },
-        }
-      );
+      // Create auth user directly with confirmed email
+      const { data: authData, error: createError } = await serviceClient.auth.admin.createUser({
+        email: member.email.trim().toLowerCase(),
+        password: memberPassword,
+        email_confirm: true,
+        user_metadata: {
+          intended_role: 'member',
+          linked_member_reg_no: member.reg_no,
+          created_by: callerAuth.id,
+        },
+      });
 
-      if (inviteError || !inviteData?.user) {
+      if (createError || !authData?.user) {
         results.push({
           reg_no,
           status: 'failed',
-          message: inviteError?.message || 'Failed to send invite email',
+          message: createError?.message || 'Failed to create auth user',
         });
         continue;
       }
 
-      const newUserId = inviteData.user.id;
+      const newUserId = authData.user.id;
 
       // Determine unique username
       let chosenUsername = (member.name_with_initials || member.full_name || `Member_${member.reg_no}`).trim();
@@ -171,7 +168,12 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      results.push({ reg_no, status: 'invited' });
+      results.push({
+        reg_no,
+        status: 'provisioned',
+        email: member.email.trim().toLowerCase(),
+        temporaryPassword: memberPassword,
+      });
     }
 
     return new Response(JSON.stringify({ success: true, results }), {
@@ -180,13 +182,13 @@ Deno.serve(async (req: Request) => {
     });
   } catch (err) {
     console.error('Provisioning error:', err);
-    return errorResponse('Internal server error', 500, corsHeaders);
+    return errorResponse('Internal server error', 500);
   }
 });
 
-function errorResponse(message: string, status: number, headers: Record<string, string>): Response {
+function errorResponse(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
-    headers: { ...headers, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     status,
   });
 }

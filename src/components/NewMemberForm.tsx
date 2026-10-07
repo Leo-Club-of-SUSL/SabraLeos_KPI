@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { systemService } from '../services/system-service';
 import { userService } from '../services/user-service';
-import { Camera, Loader2, EyeOff, MailCheck } from 'lucide-react';
+import { Camera, Loader2, EyeOff, KeyRound, Copy, Check, Eye, RefreshCw, UserCheck } from 'lucide-react';
 import { validatePhotoFile, validateRegNo, validatePhoneNumber, sanitizeTextInput } from '../lib/sanitize';
 import type { Member, Faculty, Batch as BatchType, MemberStatus } from '../types/database';
 
@@ -27,7 +27,16 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     display_alias: '',
   });
 
-  const [inviteAccount, setInviteAccount] = useState(true);
+  const [createAccount, setCreateAccount] = useState(true);
+  const [mockPassword, setMockPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{
+    member: Member;
+    email: string;
+    password: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [photoError, setPhotoError] = useState('');
@@ -57,6 +66,23 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     loadSystemData();
   }, []);
 
+  // Update default password suggestion when reg_no changes if user hasn't typed a custom one
+  useEffect(() => {
+    if (formData.reg_no && (!mockPassword || mockPassword.startsWith('Leo@'))) {
+      const clean = formData.reg_no.replace(/[^a-zA-Z0-9]/g, '');
+      setMockPassword(`Leo@${clean || 'Member'}2026!`);
+    }
+  }, [formData.reg_no]);
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let res = 'Leo@';
+    for (let i = 0; i < 8; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setMockPassword(res);
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPhotoError('');
     const file = e.target.files?.[0];
@@ -83,8 +109,11 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
     if (!formData.batch) errors.batch = 'Batch selection is required';
     if (!formData.faculty) errors.faculty = 'Faculty selection is required';
     if (!validatePhoneNumber(formData.whatsapp)) errors.whatsapp = 'Invalid phone number format';
-    if (inviteAccount && !formData.email) {
-      errors.email = 'Email address is required to invite member to portal';
+    if (createAccount && !formData.email) {
+      errors.email = 'Email address is required to create member portal login account';
+    }
+    if (createAccount && mockPassword && mockPassword.length < 6) {
+      errors.password = 'Temporary password must be at least 6 characters';
     }
     
     setFieldErrors(errors);
@@ -123,17 +152,30 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
         photo_url: photoUrl,
       });
 
-      // Send portal invite if requested
-      if (formData.email && inviteAccount) {
+      // Create portal account directly with mock password if selected
+      if (formData.email && createAccount) {
+        const passToUse = mockPassword || `Leo@${member.reg_no.replace(/[^a-zA-Z0-9]/g, '')}2026!`;
         try {
-          const results = await userService.provisionMembers([member.reg_no]);
+          const results = await userService.provisionMembers([member.reg_no], passToUse);
           const res = results[0];
           if (res?.status === 'failed') {
-            alert(`Member created, but invite could not be sent: ${res.message || 'Service unavailable'}`);
+            alert(`Member profile created, but login account failed: ${res.message || 'Service unavailable'}`);
+            onSuccess(member);
+            return;
           }
+
+          // Show manual credentials modal
+          setCreatedCredentials({
+            member,
+            email: formData.email,
+            password: passToUse,
+          });
+          return;
         } catch (accountErr) {
-          console.warn('Member created, invite error:', accountErr);
-          alert(`Member created, but invitation email could not be sent: ${accountErr instanceof Error ? accountErr.message : 'Account service unavailable'}`);
+          console.warn('Member created, account error:', accountErr);
+          alert(`Member created, but portal account setup encountered an issue: ${accountErr instanceof Error ? accountErr.message : 'Account service unavailable'}`);
+          onSuccess(member);
+          return;
         }
       }
 
@@ -144,6 +186,66 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
       setLoading(false);
     }
   };
+
+  const copyCredentialsToClipboard = () => {
+    if (!createdCredentials) return;
+    const text = `Leo Club SUSL - Portal Login Credentials\n\nMember: ${createdCredentials.member.name_with_initials} (${createdCredentials.member.reg_no})\nEmail: ${createdCredentials.email}\nTemporary Password: ${createdCredentials.password}\n\nLogin URL: ${window.location.origin}\n* Please change your password after logging in.`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  if (createdCredentials) {
+    return (
+      <div className="p-6 text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
+          <UserCheck className="w-8 h-8" />
+        </div>
+
+        <div>
+          <h3 className="text-xl font-black text-gray-900 dark:text-white">
+            Member & Login Account Created!
+          </h3>
+          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Account created without sending emails. Hand over the credentials below directly to the member.
+          </p>
+        </div>
+
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-2xl text-left space-y-3 font-mono text-xs">
+          <div>
+            <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Member</span>
+            <span className="text-gray-900 dark:text-white font-bold">{createdCredentials.member.name_with_initials} ({createdCredentials.member.reg_no})</span>
+          </div>
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+            <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Login Email</span>
+            <span className="text-gray-900 dark:text-white select-all">{createdCredentials.email}</span>
+          </div>
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+            <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Temporary Password</span>
+            <span className="text-maroon-600 dark:text-neon-blue font-bold select-all">{createdCredentials.password}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            type="button"
+            onClick={copyCredentialsToClipboard}
+            className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+            {copied ? 'Copied to Clipboard!' : 'Copy Credentials'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onSuccess(createdCredentials.member)}
+            className="flex-1 px-4 py-3 bg-maroon-600 hover:bg-maroon-700 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-maroon-600/20"
+          >
+            Done & Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (dataLoading) {
     return (
@@ -324,35 +426,72 @@ export function NewMemberForm({ initialRegNo, onSuccess, onCancel }: NewMemberFo
         </div>
 
         {/* Member Portal Login Account Section */}
-        <div className="md:col-span-2 p-5 rounded-xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
+        <div className="md:col-span-2 p-5 rounded-2xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <MailCheck className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
+              <KeyRound className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
               <div>
                 <span className="font-bold text-gray-900 dark:text-white text-sm">
-                  Send Portal Invitation Email
+                  Create Member Portal Login Account
                 </span>
                 <p className="text-xs text-gray-600 dark:text-gray-400">
-                  Sends a secure, time-limited invite link to the member to set their own password
+                  Set a mock password to hand over manually. The member can change their password after login.
                 </p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={inviteAccount}
-                onChange={(e) => setInviteAccount(e.target.checked)}
+                checked={createAccount}
+                onChange={(e) => setCreateAccount(e.target.checked)}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-maroon-600"></div>
             </label>
           </div>
 
-          {inviteAccount && !formData.email && (
-            <div className="pt-2 border-t border-maroon-200/60 dark:border-maroon-800/60">
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                <span>ℹ️ Please enter the member's <strong>Email Address</strong> above to send the invitation email.</span>
+          {createAccount && (
+            <div className="pt-3 border-t border-maroon-200/60 dark:border-maroon-800/60 space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    Temporary / Mock Password <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    className="text-[11px] font-bold text-maroon-600 dark:text-neon-blue hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Generate Random
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={mockPassword}
+                    onChange={(e) => setMockPassword(e.target.value)}
+                    placeholder="Enter temporary password (min 6 chars)"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10 font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {fieldErrors.password && <p className="mt-1 text-xs text-red-500">{fieldErrors.password}</p>}
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                  Provide this password to the member manually along with their email address.
+                </p>
               </div>
+
+              {!formData.email && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+                  ⚠️ Please also fill in the <strong>Email Address</strong> field above to enable portal login.
+                </div>
+              )}
             </div>
           )}
         </div>

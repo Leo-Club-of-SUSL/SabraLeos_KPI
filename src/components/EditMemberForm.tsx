@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { systemService } from '../services/system-service';
 import { userService } from '../services/user-service';
-import { Camera, Loader2, X, EyeOff, MailCheck, Send } from 'lucide-react';
+import { Camera, Loader2, X, EyeOff, KeyRound, Copy, Check, Eye, RefreshCw, UserCheck, ShieldCheck } from 'lucide-react';
 import { validatePhotoFile, validatePhoneNumber, sanitizeTextInput } from '../lib/sanitize';
 import type { Member, Faculty, Batch as BatchType, MemberStatus, AppUser } from '../types/database';
 
@@ -39,9 +39,21 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
 
   // Portal login account state
   const [linkedUser, setLinkedUser] = useState<AppUser | null>(null);
-  const [inviteAccount, setInviteAccount] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
+  const [createAccount, setCreateAccount] = useState(false);
+  const [mockPassword, setMockPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [showAdminNewPassword, setShowAdminNewPassword] = useState(false);
+  const [passwordUpdateLoading, setPasswordUpdateLoading] = useState(false);
+  const [passwordUpdateSuccess, setPasswordUpdateSuccess] = useState<string | null>(null);
+  const [passwordUpdateError, setPasswordUpdateError] = useState<string | null>(null);
+
+  const [credentialModal, setCredentialModal] = useState<{
+    title: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const loadSystemData = async () => {
@@ -65,6 +77,27 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
     loadSystemData();
   }, [member.reg_no]);
 
+  // Set default mock password for unlinked member
+  useEffect(() => {
+    if (!linkedUser && !mockPassword) {
+      const clean = member.reg_no.replace(/[^a-zA-Z0-9]/g, '');
+      setMockPassword(`Leo@${clean || 'Member'}2026!`);
+    }
+  }, [linkedUser, member.reg_no]);
+
+  const generateRandomPassword = (forExisting = false) => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let res = 'Leo@';
+    for (let i = 0; i < 8; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    if (forExisting) {
+      setAdminNewPassword(res);
+    } else {
+      setMockPassword(res);
+    }
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPhotoError('');
     const file = e.target.files?.[0];
@@ -83,17 +116,30 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
     }
   };
 
-  const handleSendResetEmail = async () => {
-    const targetEmail = formData.email || member.email;
-    if (!targetEmail) return;
-    setResetLoading(true);
+  const handleAdminSetPassword = async () => {
+    if (!linkedUser) return;
+    if (!adminNewPassword || adminNewPassword.trim().length < 6) {
+      setPasswordUpdateError('Password must be at least 6 characters');
+      return;
+    }
+
+    setPasswordUpdateError(null);
+    setPasswordUpdateSuccess(null);
+    setPasswordUpdateLoading(true);
+
     try {
-      await userService.sendPasswordResetEmail(targetEmail);
-      setResetSent(true);
+      await userService.adminSetUserPassword(linkedUser.id, adminNewPassword.trim());
+      setPasswordUpdateSuccess('Temporary password set successfully!');
+      setCredentialModal({
+        title: 'Temporary Password Updated',
+        email: formData.email || member.email || linkedUser.username,
+        password: adminNewPassword.trim(),
+      });
+      setAdminNewPassword('');
     } catch (err) {
-      alert(`Could not send reset email: ${err instanceof Error ? err.message : 'Service unavailable'}`);
+      setPasswordUpdateError(err instanceof Error ? err.message : 'Failed to update password');
     } finally {
-      setResetLoading(false);
+      setPasswordUpdateLoading(false);
     }
   };
 
@@ -105,8 +151,11 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
     if (!formData.faculty) errors.faculty = 'Faculty selection is required';
     if (!validatePhoneNumber(formData.whatsapp)) errors.whatsapp = 'Invalid phone number format';
     if (formData.email && !formData.email.includes('@')) errors.email = 'Invalid email address';
-    if (!linkedUser && inviteAccount && !formData.email) {
-      errors.email = 'Email address is required to send portal invitation';
+    if (!linkedUser && createAccount && !formData.email) {
+      errors.email = 'Email address is required to create portal login account';
+    }
+    if (!linkedUser && createAccount && mockPassword && mockPassword.length < 6) {
+      errors.password = 'Temporary password must be at least 6 characters';
     }
 
     setFieldErrors(errors);
@@ -154,17 +203,29 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
         }
       }
 
-      // Handle new account invite for unlinked member
-      if (!linkedUser && inviteAccount && formData.email) {
+      // Handle new account creation for unlinked member
+      if (!linkedUser && createAccount && formData.email) {
+        const passToUse = mockPassword || `Leo@${member.reg_no.replace(/[^a-zA-Z0-9]/g, '')}2026!`;
         try {
-          const results = await userService.provisionMembers([member.reg_no]);
+          const results = await userService.provisionMembers([member.reg_no], passToUse);
           const res = results[0];
           if (res?.status === 'failed') {
-            alert(`Member updated, but invite could not be sent: ${res.message || 'Service unavailable'}`);
+            alert(`Member updated, but account creation failed: ${res.message || 'Service unavailable'}`);
+            onSuccess(updated);
+            return;
           }
+
+          setCredentialModal({
+            title: 'Member Portal Account Created',
+            email: formData.email,
+            password: passToUse,
+          });
+          return;
         } catch (accErr) {
-          console.error('Account invite failed:', accErr);
-          alert(`Member details updated, but invite encountered an issue: ${accErr instanceof Error ? accErr.message : 'Service unavailable'}`);
+          console.error('Account creation failed:', accErr);
+          alert(`Member details updated, but account setup encountered an issue: ${accErr instanceof Error ? accErr.message : 'Service unavailable'}`);
+          onSuccess(updated);
+          return;
         }
       }
 
@@ -175,6 +236,66 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
       setLoading(false);
     }
   };
+
+  const copyCredentialsToClipboard = () => {
+    if (!credentialModal) return;
+    const text = `Leo Club SUSL - Portal Login Credentials\n\nMember: ${formData.name_with_initials || member.name_with_initials} (${member.reg_no})\nEmail: ${credentialModal.email}\nTemporary Password: ${credentialModal.password}\n\nLogin URL: ${window.location.origin}\n* Please change your password after logging in.`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  if (credentialModal) {
+    return (
+      <div className="p-6 text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
+          <UserCheck className="w-8 h-8" />
+        </div>
+
+        <div>
+          <h3 className="text-xl font-black text-gray-900 dark:text-white">
+            {credentialModal.title}
+          </h3>
+          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Manual credentials ready. Hand these over directly to the member.
+          </p>
+        </div>
+
+        <div className="p-4 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-2xl text-left space-y-3 font-mono text-xs">
+          <div>
+            <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Member</span>
+            <span className="text-gray-900 dark:text-white font-bold">{formData.name_with_initials || member.name_with_initials} ({member.reg_no})</span>
+          </div>
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+            <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Login Email</span>
+            <span className="text-gray-900 dark:text-white select-all">{credentialModal.email}</span>
+          </div>
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+            <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Temporary Password</span>
+            <span className="text-maroon-600 dark:text-neon-blue font-bold select-all">{credentialModal.password}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            type="button"
+            onClick={copyCredentialsToClipboard}
+            className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+            {copied ? 'Copied to Clipboard!' : 'Copy Credentials'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onSuccess({ ...member, ...formData })}
+            className="flex-1 px-4 py-3 bg-maroon-600 hover:bg-maroon-700 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-maroon-600/20"
+          >
+            Done & Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (dataLoading) {
     return (
@@ -352,18 +473,18 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
         </div>
 
         {/* Member Portal Login Account & Password Management */}
-        <div className="md:col-span-2 p-5 rounded-xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
+        <div className="md:col-span-2 p-5 rounded-2xl bg-maroon-50/70 dark:bg-maroon-950/30 border border-maroon-200 dark:border-maroon-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <MailCheck className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
+              <KeyRound className="w-5 h-5 text-maroon-600 dark:text-neon-blue" />
               <div>
                 <span className="font-bold text-gray-900 dark:text-white text-sm">
-                  {linkedUser ? 'Member Portal Account' : 'Send Member Portal Invitation'}
+                  {linkedUser ? 'Member Portal Account' : 'Create Member Portal Login Account'}
                 </span>
                 <p className="text-xs text-gray-600 dark:text-gray-400">
                   {linkedUser
                     ? `Linked account (@${linkedUser.username || linkedUser.id.substring(0, 8)}) • Role: ${linkedUser.role} • Status: ${linkedUser.status}`
-                    : 'Invite this member to set their own password and access the member portal'}
+                    : 'Set mock credentials for this member to hand over manually'}
                 </p>
               </div>
             </div>
@@ -371,8 +492,8 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={inviteAccount}
-                  onChange={(e) => setInviteAccount(e.target.checked)}
+                  checked={createAccount}
+                  onChange={(e) => setCreateAccount(e.target.checked)}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-maroon-600"></div>
@@ -380,42 +501,115 @@ export function EditMemberForm({ member, onSuccess, onCancel }: EditMemberFormPr
             )}
           </div>
 
-          {linkedUser && (
-            <div className="pt-3 border-t border-maroon-200/60 dark:border-maroon-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* If unlinked and creating account */}
+          {!linkedUser && createAccount && (
+            <div className="pt-3 border-t border-maroon-200/60 dark:border-maroon-800/60 space-y-3">
               <div>
-                <p className="text-xs text-gray-700 dark:text-gray-300 font-medium">
-                  Zero-Knowledge Password Security
-                </p>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                  Admins cannot view or set user passwords. Send a recovery link directly to the member's verified email.
-                </p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    Temporary / Mock Password <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => generateRandomPassword(false)}
+                    className="text-[11px] font-bold text-maroon-600 dark:text-neon-blue hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Generate Random
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={mockPassword}
+                    onChange={(e) => setMockPassword(e.target.value)}
+                    placeholder="Enter temporary password (min 6 chars)"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10 font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {fieldErrors.password && <p className="mt-1 text-xs text-red-500">{fieldErrors.password}</p>}
               </div>
-              <button
-                type="button"
-                onClick={handleSendResetEmail}
-                disabled={resetLoading || resetSent || !formData.email}
-                className="px-3.5 py-2 bg-maroon-600 hover:bg-maroon-700 disabled:bg-gray-400 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors shrink-0"
-              >
-                {resetLoading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
-                  </>
-                ) : resetSent ? (
-                  '✓ Reset Link Sent'
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" /> Send Reset Link
-                  </>
-                )}
-              </button>
+
+              {!formData.email && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+                  ⚠️ Please enter the member's <strong>Email Address</strong> above to create the portal login.
+                </div>
+              )}
             </div>
           )}
 
-          {!linkedUser && inviteAccount && !formData.email && (
-            <div className="pt-2 border-t border-maroon-200/60 dark:border-maroon-800/60">
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                <span>ℹ️ Please enter the member's <strong>Email Address</strong> above to send the portal invite link.</span>
+          {/* If linked: Set New Temporary Password Directly */}
+          {linkedUser && (
+            <div className="pt-3 border-t border-maroon-200/60 dark:border-maroon-800/60 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-700 dark:text-gray-300 font-bold">
+                    Set New Temporary Password
+                  </p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    Directly updates the user's password so you can hand it over manually.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => generateRandomPassword(true)}
+                  className="text-[11px] font-bold text-maroon-600 dark:text-neon-blue hover:underline flex items-center gap-1 shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" /> Generate Random
+                </button>
               </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showAdminNewPassword ? 'text' : 'password'}
+                    value={adminNewPassword}
+                    onChange={(e) => setAdminNewPassword(e.target.value)}
+                    placeholder="Enter new temporary password"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10 font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminNewPassword(!showAdminNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >
+                    {showAdminNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAdminSetPassword}
+                  disabled={passwordUpdateLoading || !adminNewPassword}
+                  className="px-4 py-2 bg-maroon-600 hover:bg-maroon-700 disabled:bg-gray-400 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm"
+                >
+                  {passwordUpdateLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-3.5 h-3.5" /> Update Password
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {passwordUpdateSuccess && (
+                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs text-emerald-800 dark:text-emerald-300 font-semibold">
+                  ✓ {passwordUpdateSuccess}
+                </div>
+              )}
+              {passwordUpdateError && (
+                <div className="p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-800 dark:text-red-300">
+                  ⚠️ {passwordUpdateError}
+                </div>
+              )}
             </div>
           )}
         </div>

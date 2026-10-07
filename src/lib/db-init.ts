@@ -4,7 +4,7 @@ const isDev = import.meta.env.DEV;
 
 export async function initializeDatabase() {
   try {
-    const { data, error: tablesError } = await supabase
+    const { error: tablesError } = await supabase
       .from('members')
       .select('reg_no')
       .limit(1);
