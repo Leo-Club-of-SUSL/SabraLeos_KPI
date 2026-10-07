@@ -62,6 +62,30 @@ export const memberService = {
     return data as Member;
   },
 
+  async createMany(members: MemberInsert[]): Promise<Member[]> {
+    if (members.length === 0) return [];
+    const formatted = members.map(m => ({ ...m, reg_no: m.reg_no.toUpperCase() }));
+    const { data, error } = await db()
+      .from('members')
+      .insert(formatted)
+      .select();
+
+    if (error) throw error;
+    return (data as Member[]) || [];
+  },
+
+  async checkExistingRegNos(regNos: string[]): Promise<Set<string>> {
+    if (regNos.length === 0) return new Set();
+    const uppercaseRegNos = regNos.map(r => r.toUpperCase());
+    const { data, error } = await db()
+      .from('members')
+      .select('reg_no')
+      .in('reg_no', uppercaseRegNos);
+
+    if (error) throw error;
+    return new Set((data || []).map((m: { reg_no: string }) => m.reg_no.toUpperCase()));
+  },
+
   async update(regNo: string, updates: MemberUpdate): Promise<Member> {
     const { data, error } = await db()
       .from('members')
