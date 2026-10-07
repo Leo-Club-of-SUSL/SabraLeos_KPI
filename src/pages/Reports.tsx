@@ -8,10 +8,9 @@ import { ExportOptionsModal, type ColumnOption } from '../components/ExportOptio
 import { TierBadge } from '../components/TierBadge';
 import { getTier, TIERS_CONFIG } from '../lib/tier-calculator';
 
-export function getCurrentRotaryYearRange() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1; // 1-12
+export function getCurrentRotaryYearRange(date: Date = new Date()) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1; // 1-12
   const startYear = month >= 7 ? year : year - 1;
   const endYear = startYear + 1;
   return {

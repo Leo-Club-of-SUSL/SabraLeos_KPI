@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { bulkImportService, type MemberImportRow } from '../bulk-import-service';
 import { memberService } from '../member-service';
+import type { MemberInsert } from '../../types/database';
 
 vi.mock('../member-service', () => ({
   memberService: {
@@ -34,8 +35,8 @@ describe('bulkImportService Chunking & Batching', () => {
       whatsapp: '+94771234567',
     }));
 
-    (memberService.checkExistingRegNos as any).mockResolvedValue(new Set());
-    (memberService.createMany as any).mockResolvedValue([]);
+    (memberService.checkExistingRegNos as unknown as Mock).mockResolvedValue(new Set());
+    (memberService.createMany as unknown as Mock).mockResolvedValue([]);
 
     const result = await bulkImportService.importMembers(rows);
 
@@ -63,12 +64,12 @@ describe('bulkImportService Chunking & Batching', () => {
       whatsapp: '+94771234567',
     }));
 
-    (memberService.checkExistingRegNos as any).mockResolvedValue(new Set());
+    (memberService.checkExistingRegNos as unknown as Mock).mockResolvedValue(new Set());
     // Simulate batch insertion failure on chunk
-    (memberService.createMany as any).mockRejectedValueOnce(new Error('Batch constraint violation'));
+    (memberService.createMany as unknown as Mock).mockRejectedValueOnce(new Error('Batch constraint violation'));
 
     // In fallback, row 3 fails, rows 1, 2, 4, 5 succeed
-    (memberService.create as any).mockImplementation((m: any) => {
+    (memberService.create as unknown as Mock).mockImplementation((m: MemberInsert) => {
       if (m.reg_no === '22ABC0003') {
         throw new Error('Specific duplicate key error on row 3');
       }
@@ -105,8 +106,8 @@ describe('bulkImportService Chunking & Batching', () => {
       },
     ];
 
-    (memberService.checkExistingRegNos as any).mockResolvedValue(new Set());
-    (memberService.createMany as any).mockResolvedValue([]);
+    (memberService.checkExistingRegNos as unknown as Mock).mockResolvedValue(new Set());
+    (memberService.createMany as unknown as Mock).mockResolvedValue([]);
 
     const result = await bulkImportService.importMembers(rows);
 

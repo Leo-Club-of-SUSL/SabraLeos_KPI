@@ -3,6 +3,11 @@ import type { Faculty, FacultyInsert, FacultyUpdate, Batch, BatchInsert, BatchUp
 
 export const EXPECTED_SCHEMA_VERSION = '2026.10.07.1';
 
+export interface DashboardStats {
+  member_count: number;
+  total_points: number;
+}
+
 export interface TierPreviewResult {
   promotions: number;
   demotions: number;
@@ -31,7 +36,21 @@ export interface SecurityEvent {
   created_at: string;
 }
 
+// In-memory session cache for static lookups
+let facultiesCache: Faculty[] | null = null;
+let batchesCache: Batch[] | null = null;
+let avenuesCache: Avenue[] | null = null;
+let tierThresholdsCache: import('../lib/tier-calculator').TierThresholds | null = null;
+
 export const systemService = {
+  // Clear static in-memory cache on sign-out or forced refresh
+  clearStaticCache(): void {
+    facultiesCache = null;
+    batchesCache = null;
+    avenuesCache = null;
+    tierThresholdsCache = null;
+  },
+
   // Schema Version Check
   async checkSchemaVersion(): Promise<{ matches: boolean; current: string | null; expected: string }> {
     try {
@@ -49,11 +68,22 @@ export const systemService = {
     }
   },
 
+  // Dashboard Stats RPC (Single aggregate call computed on database)
+  async getDashboardStats(): Promise<DashboardStats> {
+    const { data, error } = await supabase.rpc('get_dashboard_stats');
+    if (error) throw error;
+    const res = data as { member_count: number; total_points: number };
+    return {
+      member_count: Number(res.member_count) || 0,
+      total_points: Number(res.total_points) || 0,
+    };
+  },
+
   // Security Alerts & Logs
   async getSecurityAlerts(unresolvedOnly = true): Promise<SecurityAlert[]> {
     let query = supabase
       .from('security_alerts')
-      .select('*')
+      .select('id, alert_type, severity, title, description, metadata, is_resolved, created_at')
       .order('created_at', { ascending: false });
 
     if (unresolvedOnly) {
@@ -81,7 +111,7 @@ export const systemService = {
   async getSecurityEvents(): Promise<SecurityEvent[]> {
     const { data, error } = await supabase
       .from('security_events')
-      .select('*')
+      .select('id, event_type, user_id, actor_id, ip_address, details, created_at')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -92,22 +122,29 @@ export const systemService = {
     return (data as SecurityEvent[]) || [];
   },
 
-  // Faculties
-  async getFaculties(): Promise<Faculty[]> {
+  // Faculties (Session Cached)
+  async getFaculties(forceRefresh = false): Promise<Faculty[]> {
+    if (!forceRefresh && facultiesCache) {
+      return facultiesCache;
+    }
+
     const { data, error } = await supabase
       .from('faculties')
-      .select('*')
+      .select('id, name, created_at')
       .order('name', { ascending: true });
 
     if (error) throw error;
-    return (data as Faculty[]) || [];
+    const result = (data as Faculty[]) || [];
+    facultiesCache = result;
+    return result;
   },
 
   async createFaculty(faculty: FacultyInsert): Promise<Faculty> {
+    facultiesCache = null;
     const { data, error } = await supabase
       .from('faculties')
       .insert(faculty)
-      .select()
+      .select('id, name, created_at')
       .single();
 
     if (error) throw error;
@@ -115,11 +152,12 @@ export const systemService = {
   },
 
   async updateFaculty(id: string, updates: FacultyUpdate): Promise<Faculty> {
+    facultiesCache = null;
     const { data, error } = await supabase
       .from('faculties')
       .update(updates)
       .eq('id', id)
-      .select()
+      .select('id, name, created_at')
       .single();
 
     if (error) throw error;
@@ -127,6 +165,7 @@ export const systemService = {
   },
 
   async deleteFaculty(id: string): Promise<void> {
+    facultiesCache = null;
     const { error } = await supabase
       .from('faculties')
       .delete()
@@ -135,22 +174,29 @@ export const systemService = {
     if (error) throw error;
   },
 
-  // Batches
-  async getBatches(): Promise<Batch[]> {
+  // Batches (Session Cached)
+  async getBatches(forceRefresh = false): Promise<Batch[]> {
+    if (!forceRefresh && batchesCache) {
+      return batchesCache;
+    }
+
     const { data, error } = await supabase
       .from('batches')
-      .select('*')
+      .select('id, name, created_at')
       .order('name', { ascending: false });
 
     if (error) throw error;
-    return (data as Batch[]) || [];
+    const result = (data as Batch[]) || [];
+    batchesCache = result;
+    return result;
   },
 
   async createBatch(batch: BatchInsert): Promise<Batch> {
+    batchesCache = null;
     const { data, error } = await supabase
       .from('batches')
       .insert(batch)
-      .select()
+      .select('id, name, created_at')
       .single();
 
     if (error) throw error;
@@ -158,11 +204,12 @@ export const systemService = {
   },
 
   async updateBatch(id: string, updates: BatchUpdate): Promise<Batch> {
+    batchesCache = null;
     const { data, error } = await supabase
       .from('batches')
       .update(updates)
       .eq('id', id)
-      .select()
+      .select('id, name, created_at')
       .single();
 
     if (error) throw error;
@@ -170,6 +217,7 @@ export const systemService = {
   },
 
   async deleteBatch(id: string): Promise<void> {
+    batchesCache = null;
     const { error } = await supabase
       .from('batches')
       .delete()
@@ -178,22 +226,29 @@ export const systemService = {
     if (error) throw error;
   },
 
-  // Avenues
-  async getAvenues(): Promise<Avenue[]> {
+  // Avenues (Session Cached)
+  async getAvenues(forceRefresh = false): Promise<Avenue[]> {
+    if (!forceRefresh && avenuesCache) {
+      return avenuesCache;
+    }
+
     const { data, error } = await supabase
       .from('avenues')
-      .select('*')
+      .select('id, name, created_at')
       .order('name', { ascending: true });
 
     if (error) throw error;
-    return (data as Avenue[]) || [];
+    const result = (data as Avenue[]) || [];
+    avenuesCache = result;
+    return result;
   },
 
   async createAvenue(avenue: AvenueInsert): Promise<Avenue> {
+    avenuesCache = null;
     const { data, error } = await supabase
       .from('avenues')
       .insert(avenue)
-      .select()
+      .select('id, name, created_at')
       .single();
 
     if (error) throw error;
@@ -201,11 +256,12 @@ export const systemService = {
   },
 
   async updateAvenue(id: string, updates: AvenueUpdate): Promise<Avenue> {
+    avenuesCache = null;
     const { data, error } = await supabase
       .from('avenues')
       .update(updates)
       .eq('id', id)
-      .select()
+      .select('id, name, created_at')
       .single();
 
     if (error) throw error;
@@ -213,6 +269,7 @@ export const systemService = {
   },
 
   async deleteAvenue(id: string): Promise<void> {
+    avenuesCache = null;
     const { error } = await supabase
       .from('avenues')
       .delete()
@@ -221,8 +278,12 @@ export const systemService = {
     if (error) throw error;
   },
 
-  // Tier Thresholds Settings
-  async getTierThresholds(): Promise<import('../lib/tier-calculator').TierThresholds> {
+  // Tier Thresholds Settings (Session Cached)
+  async getTierThresholds(forceRefresh = false): Promise<import('../lib/tier-calculator').TierThresholds> {
+    if (!forceRefresh && tierThresholdsCache) {
+      return tierThresholdsCache;
+    }
+
     const { getActiveTierThresholds, setCustomTierThresholds } = await import('../lib/tier-calculator');
     try {
       const { data, error } = await supabase
@@ -246,12 +307,15 @@ export const systemService = {
           platinum: typeof val.platinum === 'number' ? val.platinum : 800,
         };
         setCustomTierThresholds(thresholds);
+        tierThresholdsCache = thresholds;
         return thresholds;
       }
     } catch (err) {
       console.warn('Error reading tier_thresholds from database:', err);
     }
-    return getActiveTierThresholds();
+    const defaults = getActiveTierThresholds();
+    tierThresholdsCache = defaults;
+    return defaults;
   },
 
   // Preview Tier Changes (simulates impact on active members before committing)
@@ -275,6 +339,7 @@ export const systemService = {
       throw new Error('Tier thresholds must strictly increase: Prospect (0) < Official < Bronze < Silver < Gold < Platinum');
     }
 
+    tierThresholdsCache = null;
     const { setCustomTierThresholds } = await import('../lib/tier-calculator');
 
     const { data, error } = await supabase.rpc('update_tier_thresholds', {
@@ -285,6 +350,7 @@ export const systemService = {
 
     const saved = data as unknown as import('../lib/tier-calculator').TierThresholds;
     setCustomTierThresholds(saved);
+    tierThresholdsCache = saved;
     return saved;
   },
 };

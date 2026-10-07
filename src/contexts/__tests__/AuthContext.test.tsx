@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import React from 'react';
 import { AuthProvider, useAuth } from '../AuthContext';
 import { supabase } from '../../lib/supabase';
 import { userService } from '../../services/user-service';
 import type { SessionContext } from '../../services/user-service';
+import type { Session, User } from '@supabase/supabase-js';
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -32,18 +34,18 @@ vi.mock('../../services/log-service', () => ({
 }));
 
 describe('AuthContext Startup & Session Handling', () => {
-  let authChangeCallback: (event: string, session: any) => void;
+  let authChangeCallback: (event: string, session: Session | null) => void;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (supabase.auth.onAuthStateChange as any).mockImplementation((cb: any) => {
+    (supabase.auth.onAuthStateChange as unknown as Mock).mockImplementation((cb: (event: string, session: Session | null) => void) => {
       authChangeCallback = cb;
       return { data: { subscription: { unsubscribe: vi.fn() } } };
     });
   });
 
   it('initializes with loading state and resolves with session context from single RPC', async () => {
-    const mockUser = { id: 'usr-123', email: 'officer@nexus.org' };
+    const mockUser = { id: 'usr-123', email: 'officer@nexus.org' } as User;
     const mockContext: SessionContext = {
       valid: true,
       id: 'usr-123',
@@ -55,7 +57,7 @@ describe('AuthContext Startup & Session Handling', () => {
       created_at: '2026-01-01T00:00:00Z',
     };
 
-    (userService.getSessionContext as any).mockResolvedValue(mockContext);
+    (userService.getSessionContext as unknown as Mock).mockResolvedValue(mockContext);
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <AuthProvider>{children}</AuthProvider>
@@ -67,7 +69,7 @@ describe('AuthContext Startup & Session Handling', () => {
 
     // Simulate INITIAL_SESSION event
     act(() => {
-      authChangeCallback('INITIAL_SESSION', { user: mockUser } as any);
+      authChangeCallback('INITIAL_SESSION', { user: mockUser } as unknown as Session);
     });
 
     await waitFor(() => {
@@ -83,15 +85,15 @@ describe('AuthContext Startup & Session Handling', () => {
   });
 
   it('fails closed and terminates session if user is suspended', async () => {
-    const mockUser = { id: 'usr-456', email: 'suspended@nexus.org' };
+    const mockUser = { id: 'usr-456', email: 'suspended@nexus.org' } as User;
     const mockSuspendedContext: SessionContext = {
       valid: false,
       status: 'suspended',
       reason: 'inactive_or_missing',
     };
 
-    (userService.getSessionContext as any).mockResolvedValue(mockSuspendedContext);
-    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+    (userService.getSessionContext as unknown as Mock).mockResolvedValue(mockSuspendedContext);
+    (supabase.auth.signOut as unknown as Mock).mockResolvedValue({ error: null });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <AuthProvider>{children}</AuthProvider>
@@ -100,7 +102,7 @@ describe('AuthContext Startup & Session Handling', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     act(() => {
-      authChangeCallback('INITIAL_SESSION', { user: mockUser } as any);
+      authChangeCallback('INITIAL_SESSION', { user: mockUser } as unknown as Session);
     });
 
     await waitFor(() => {
@@ -113,7 +115,7 @@ describe('AuthContext Startup & Session Handling', () => {
   });
 
   it('does not re-fetch profile on TOKEN_REFRESHED for the same user', async () => {
-    const mockUser = { id: 'usr-789', email: 'member@nexus.org' };
+    const mockUser = { id: 'usr-789', email: 'member@nexus.org' } as User;
     const mockContext: SessionContext = {
       valid: true,
       id: 'usr-789',
@@ -124,7 +126,7 @@ describe('AuthContext Startup & Session Handling', () => {
       linked_member_reg_no: '22ABC1234',
     };
 
-    (userService.getSessionContext as any).mockResolvedValue(mockContext);
+    (userService.getSessionContext as unknown as Mock).mockResolvedValue(mockContext);
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <AuthProvider>{children}</AuthProvider>
@@ -133,7 +135,7 @@ describe('AuthContext Startup & Session Handling', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     act(() => {
-      authChangeCallback('INITIAL_SESSION', { user: mockUser } as any);
+      authChangeCallback('INITIAL_SESSION', { user: mockUser } as unknown as Session);
     });
 
     await waitFor(() => {
@@ -144,7 +146,7 @@ describe('AuthContext Startup & Session Handling', () => {
 
     // Trigger TOKEN_REFRESHED
     act(() => {
-      authChangeCallback('TOKEN_REFRESHED', { user: { ...mockUser, email: 'member@nexus.org' } } as any);
+      authChangeCallback('TOKEN_REFRESHED', { user: { ...mockUser, email: 'member@nexus.org' } } as unknown as Session);
     });
 
     // Should NOT call getSessionContext a 2nd time

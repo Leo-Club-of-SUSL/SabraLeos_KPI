@@ -76,7 +76,7 @@ export const userService = {
 
     const { data, error } = await supabase
       .from('app_users')
-      .select('*')
+      .select('id, username, designation, role, status, linked_member_reg_no, created_at')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -93,7 +93,7 @@ export const userService = {
   async getAll(): Promise<AppUser[]> {
     const { data, error } = await supabase
       .from('app_users')
-      .select('*')
+      .select('id, username, designation, role, status, linked_member_reg_no, created_at')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -103,7 +103,7 @@ export const userService = {
   async getByLinkedMember(regNo: string): Promise<AppUser | null> {
     const { data, error } = await supabase
       .from('app_users')
-      .select('*')
+      .select('id, username, designation, role, status, linked_member_reg_no, created_at')
       .eq('linked_member_reg_no', regNo)
       .maybeSingle();
 

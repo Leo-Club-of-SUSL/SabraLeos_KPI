@@ -143,6 +143,15 @@ export const contributionService = {
   },
 
   async getTotalPoints(): Promise<number> {
+    try {
+      const { data, error } = await supabase.rpc('get_dashboard_stats');
+      if (!error && data) {
+        return Number((data as { total_points: number }).total_points) || 0;
+      }
+    } catch {
+      // Fallback if RPC is not available yet
+    }
+
     const { data, error } = await supabase
       .from('contributions')
       .select('points');

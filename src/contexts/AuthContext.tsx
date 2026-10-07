@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { AppUser } from '../types/database';
 import { userService } from '../services/user-service';
 import { logService } from '../services/log-service';
+import { systemService } from '../services/system-service';
 import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 // Officers: 15-minute idle timeout. Members: 30-minute idle timeout.
@@ -33,10 +34,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     try {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      systemService.clearStaticCache();
       await supabase.auth.signOut();
     } catch (err) {
       console.warn('Sign out error:', err);
     } finally {
+      systemService.clearStaticCache();
       lastUserIdRef.current = null;
       setUser(null);
       setAppUser(null);
