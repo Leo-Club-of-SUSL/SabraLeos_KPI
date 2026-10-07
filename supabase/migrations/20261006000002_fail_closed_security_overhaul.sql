@@ -19,6 +19,121 @@
 BEGIN;
 
 -- ============================================================
+-- 0. BASE SCHEMA PREREQUISITES (IDEMPOTENT)
+-- ============================================================
+
+-- Ensure app_users table and status column exist
+CREATE TABLE IF NOT EXISTS public.app_users (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    username TEXT NOT NULL UNIQUE,
+    designation TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('viewer', 'editor', 'super_admin', 'member')),
+    linked_member_reg_no TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.app_users
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'
+  CHECK (status IN ('active', 'suspended'));
+
+-- Ensure members table and columns exist
+CREATE TABLE IF NOT EXISTS public.members (
+    reg_no TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    name_with_initials TEXT NOT NULL,
+    faculty TEXT NOT NULL,
+    batch TEXT NOT NULL,
+    whatsapp TEXT NOT NULL,
+    photo_url TEXT,
+    total_points INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.members
+  ADD COLUMN IF NOT EXISTS email TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS member_status TEXT NOT NULL DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS leaderboard_opt_out BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS display_alias TEXT DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
+
+-- ============================================================
+-- 0B. CORE ROLE & SECURITY HELPER FUNCTIONS (IDEMPOTENT)
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.get_my_role()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT role::text
+  FROM public.app_users
+  WHERE id = auth.uid()
+    AND status = 'active';
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.get_my_role() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.get_my_role() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.is_officer()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT public.get_my_role() IN ('viewer', 'editor', 'super_admin');
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.is_officer() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.is_officer() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.is_editor_or_above()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT public.get_my_role() IN ('editor', 'super_admin');
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.is_editor_or_above() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.is_editor_or_above() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT public.get_my_role() = 'super_admin';
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.is_super_admin() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.is_super_admin() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.my_member_reg_no()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT linked_member_reg_no
+  FROM public.app_users
+  WHERE id = auth.uid()
+    AND status = 'active';
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.my_member_reg_no() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.my_member_reg_no() TO authenticated;
+
+-- ============================================================
 -- 1. SCHEMA VERSION TRACKING
 -- ============================================================
 
@@ -297,6 +412,31 @@ GRANT EXECUTE ON FUNCTION public.update_tier_thresholds(jsonb) TO authenticated;
 -- ============================================================
 -- 4. SECURITY EVENTS & AUDIT LOGGING
 -- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.system_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    user_name TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
+    details JSONB,
+    old_value TEXT,
+    new_value TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.system_logs ADD COLUMN IF NOT EXISTS old_value TEXT;
+ALTER TABLE public.system_logs ADD COLUMN IF NOT EXISTS new_value TEXT;
+
+ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "system_logs_select_super_admin" ON public.system_logs;
+CREATE POLICY "system_logs_select_super_admin"
+    ON public.system_logs FOR SELECT TO authenticated
+    USING (public.is_super_admin());
+
+REVOKE INSERT, UPDATE, DELETE ON public.system_logs FROM authenticated, anon, PUBLIC;
 
 CREATE TABLE IF NOT EXISTS public.security_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
