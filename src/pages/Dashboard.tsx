@@ -1,6 +1,13 @@
+import { lazy, Suspense } from 'react';
 import { usePermissions } from '../hooks/usePermissions';
-import { OfficerDashboard } from './OfficerDashboard';
-import { MemberDashboard } from '../components/MemberDashboard';
+import { PageSkeleton } from '../components/PageSkeleton';
+
+const OfficerDashboard = lazy(() =>
+  import('./OfficerDashboard').then(m => ({ default: m.OfficerDashboard }))
+);
+const MemberDashboard = lazy(() =>
+  import('../components/MemberDashboard').then(m => ({ default: m.MemberDashboard }))
+);
 
 interface DashboardProps {
   onNavigate?: (page: string, data?: unknown) => void;
@@ -15,9 +22,9 @@ interface DashboardProps {
 export function Dashboard({ onNavigate }: DashboardProps) {
   const { isMember } = usePermissions();
 
-  if (isMember) {
-    return <MemberDashboard />;
-  }
-
-  return <OfficerDashboard onNavigate={onNavigate} />;
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      {isMember ? <MemberDashboard /> : <OfficerDashboard onNavigate={onNavigate} />}
+    </Suspense>
+  );
 }

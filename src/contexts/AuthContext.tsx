@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import type { AppUser } from '../types/database';
 import { userService } from '../services/user-service';
 import { logService } from '../services/log-service';
-import type { User } from '@supabase/supabase-js';
+import { systemService } from '../services/system-service';
+import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 // Officers: 15-minute idle timeout. Members: 30-minute idle timeout.
 const OFFICER_TIMEOUT_MS = 15 * 60 * 1000;
@@ -26,108 +27,162 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Clear old local session tokens on mount
-  useEffect(() => {
-    try {
-      const keys = Object.keys(localStorage);
-      keys.forEach((key) => {
-        if (key.startsWith('sb-') || key.includes('supabase')) {
-          localStorage.removeItem(key);
-        }
-      });
-    } catch (e) {
-      console.warn('Failed to clear old session data:', e);
-    }
-  }, []);
+  const inFlightPromiseRef = useRef<Promise<void> | null>(null);
+  const lastUserIdRef = useRef<string | null>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const signOut = useCallback(async () => {
     try {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      systemService.clearStaticCache();
       await supabase.auth.signOut();
     } catch (err) {
       console.warn('Sign out error:', err);
     } finally {
+      systemService.clearStaticCache();
+      lastUserIdRef.current = null;
       setUser(null);
       setAppUser(null);
-    }
-  }, []);
-
-  const loadUser = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      setUser(authUser);
-
-      if (authUser) {
-        try {
-          const sessionCtx = await userService.getSessionContext();
-
-          // Fail closed: No valid role or suspended account -> terminate session immediately
-          if (!sessionCtx || !sessionCtx.valid || sessionCtx.status === 'suspended') {
-            await supabase.auth.signOut();
-            setUser(null);
-            setAppUser(null);
-            return;
-          }
-
-          const userData = await userService.getCurrentUser();
-          setAppUser(userData);
-        } catch (err) {
-          console.error('Error validating session context:', err);
-          await supabase.auth.signOut();
-          setUser(null);
-          setAppUser(null);
-        }
-      } else {
-        setAppUser(null);
-      }
-    } catch (error) {
-      console.error('Error loading user:', error);
-      setUser(null);
-      setAppUser(null);
-    } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadUser();
+  const loadUserContext = useCallback(async (targetUser: User | null, forceReload = false) => {
+    if (!targetUser) {
+      lastUserIdRef.current = null;
+      setUser(null);
+      setAppUser(null);
+      setLoading(false);
+      return;
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') {
+    // Check if same user is already loaded and not force-reloading
+    if (!forceReload && lastUserIdRef.current === targetUser.id && appUser) {
+      setUser(targetUser);
+      setLoading(false);
+      return;
+    }
+
+    // Reuse in-flight promise if already loading for the same user
+    if (inFlightPromiseRef.current && !forceReload && lastUserIdRef.current === targetUser.id) {
+      return inFlightPromiseRef.current;
+    }
+
+    const task = (async () => {
+      try {
+        const sessionCtx = await userService.getSessionContext();
+
+        // Fail closed: No valid role or suspended account -> terminate session immediately
+        if (!sessionCtx || !sessionCtx.valid || sessionCtx.status === 'suspended') {
+          console.warn('Session context invalid or suspended. Terminating session.');
+          lastUserIdRef.current = null;
+          setUser(null);
+          setAppUser(null);
+          try {
+            await supabase.auth.signOut();
+          } catch {
+            // non-fatal
+          }
+          return;
+        }
+
+        const userProfile: AppUser = {
+          id: sessionCtx.id ?? targetUser.id,
+          username: sessionCtx.username ?? targetUser.email?.split('@')[0] ?? 'user',
+          designation: sessionCtx.designation ?? 'Member',
+          role: sessionCtx.role ?? 'member',
+          status: sessionCtx.status ?? 'active',
+          linked_member_reg_no: sessionCtx.linked_member_reg_no ?? null,
+          created_at: sessionCtx.created_at ?? new Date().toISOString(),
+        };
+
+        lastUserIdRef.current = targetUser.id;
+        setUser(targetUser);
+        setAppUser(userProfile);
+      } catch (err) {
+        console.error('Error validating session context:', err);
+        lastUserIdRef.current = null;
         setUser(null);
         setAppUser(null);
-      } else {
-        void loadUser();
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // non-fatal
+        }
+      } finally {
+        inFlightPromiseRef.current = null;
+        setLoading(false);
       }
+    })();
+
+    inFlightPromiseRef.current = task;
+    return task;
+  }, [appUser]);
+
+  // Single entry point: onAuthStateChange handles INITIAL_SESSION and subsequent events
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        lastUserIdRef.current = null;
+        setUser(null);
+        setAppUser(null);
+        setLoading(false);
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED') {
+        // Same user token refresh - update user object without re-fetching profile
+        if (session.user && lastUserIdRef.current === session.user.id) {
+          setUser(session.user);
+          return;
+        }
+      }
+
+      // Defer execution outside the auth callback stack to prevent deadlock
+      setTimeout(() => {
+        void loadUserContext(session.user);
+      }, 0);
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [loadUser]);
+  }, [loadUserContext]);
 
   const signIn = async (email: string, password: string, captchaToken?: string): Promise<void> => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
       options: captchaToken ? { captchaToken } : undefined,
     });
 
-    if (error) {
-      // Uniform error message
+    if (error || !data.user) {
       throw new Error('Invalid email or password');
     }
 
-    // Check session context
+    // Validate session context immediately
     const sessionCtx = await userService.getSessionContext();
     if (!sessionCtx || !sessionCtx.valid || sessionCtx.status === 'suspended') {
       await supabase.auth.signOut();
       throw new Error('Invalid email or password');
     }
 
-    await loadUser();
+    const userProfile: AppUser = {
+      id: sessionCtx.id ?? data.user.id,
+      username: sessionCtx.username ?? data.user.email?.split('@')[0] ?? 'user',
+      designation: sessionCtx.designation ?? 'Member',
+      role: sessionCtx.role ?? 'member',
+      status: sessionCtx.status ?? 'active',
+      linked_member_reg_no: sessionCtx.linked_member_reg_no ?? null,
+      created_at: sessionCtx.created_at ?? new Date().toISOString(),
+    };
 
-    // Log officer login
+    lastUserIdRef.current = data.user.id;
+    setUser(data.user);
+    setAppUser(userProfile);
+    setLoading(false);
+
+    // Log officer login non-fatally
     try {
       await logService.logLogin();
     } catch {
@@ -136,12 +191,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshUser = useCallback(async () => {
-    await loadUser();
-  }, [loadUser]);
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    await loadUserContext(currentUser, true);
+  }, [loadUserContext]);
 
   // Session idle timeout — per role
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (user) {

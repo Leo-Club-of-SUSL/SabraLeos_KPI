@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
+import { systemService } from '../services/system-service';
 import { Trophy, Award, TrendingUp, Search, Plus } from 'lucide-react';
 import type { Member } from '../types/database';
 import { TierBadge } from '../components/TierBadge';
@@ -26,17 +27,20 @@ export function OfficerDashboard({ onNavigate }: OfficerDashboardProps) {
 
   const loadDashboardData = async () => {
     try {
-      const [members, points, projects, all] = await Promise.all([
+      const [members, stats, projects, all] = await Promise.all([
         memberService.getTopMembers(3),
-        contributionService.getTotalPoints(),
+        systemService.getDashboardStats().catch(async () => ({
+          member_count: 0,
+          total_points: await contributionService.getTotalPoints(),
+        })),
         contributionService.getMonthlyStats(new Date().getFullYear(), new Date().getMonth() + 1),
         memberService.getAll(),
       ]);
 
       setTopMembers(members);
-      setTotalPoints(points);
+      setTotalPoints(stats.total_points);
       setMonthlyProjects(projects);
-      setMemberCount(all.length);
+      setMemberCount(stats.member_count || all.length);
 
       const distribution = all.reduce((acc, m) => {
         const t = getTier(m.total_points).key;

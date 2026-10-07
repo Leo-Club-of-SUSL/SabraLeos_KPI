@@ -55,6 +55,8 @@ export interface SessionContext {
   role?: AppUserRole;
   status?: 'active' | 'suspended';
   linked_member_reg_no?: string | null;
+  created_at?: string;
+  updated_at?: string;
   aal?: string;
   require_mfa?: boolean;
 }
@@ -74,7 +76,7 @@ export const userService = {
 
     const { data, error } = await supabase
       .from('app_users')
-      .select('*')
+      .select('id, username, designation, role, status, linked_member_reg_no, created_at')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -83,15 +85,39 @@ export const userService = {
   },
 
   async getSessionContext(): Promise<SessionContext | null> {
-    const { data, error } = await supabase.rpc('get_my_session_context');
-    if (error || !data) return null;
-    return (data as unknown) as SessionContext;
+    try {
+      const { data, error } = await supabase.rpc('get_my_session_context');
+      if (!error && data) {
+        return (data as unknown) as SessionContext;
+      }
+    } catch {
+      // Fallback if RPC fails or is unavailable
+    }
+
+    try {
+      const user = await this.getCurrentUser();
+      if (!user) return null;
+
+      return {
+        valid: (user.status || 'active') === 'active',
+        id: user.id,
+        username: user.username,
+        designation: user.designation,
+        role: user.role,
+        status: (user.status || 'active') as 'active' | 'suspended',
+        linked_member_reg_no: user.linked_member_reg_no,
+        created_at: user.created_at,
+      };
+    } catch (err) {
+      console.error('Failed to get session context via fallback:', err);
+      return null;
+    }
   },
 
   async getAll(): Promise<AppUser[]> {
     const { data, error } = await supabase
       .from('app_users')
-      .select('*')
+      .select('id, username, designation, role, status, linked_member_reg_no, created_at')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -101,7 +127,7 @@ export const userService = {
   async getByLinkedMember(regNo: string): Promise<AppUser | null> {
     const { data, error } = await supabase
       .from('app_users')
-      .select('*')
+      .select('id, username, designation, role, status, linked_member_reg_no, created_at')
       .eq('linked_member_reg_no', regNo)
       .maybeSingle();
 

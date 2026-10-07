@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
 import { Search, UserPlus, Award, User, X, FileDown, Pencil, Download, Trash2, Layers, EyeOff, Mail } from 'lucide-react';
 import type { Member, Contribution } from '../types/database';
-import { NewMemberForm } from '../components/NewMemberForm';
-import { EditMemberForm } from '../components/EditMemberForm';
-import { AddContributionForm } from '../components/AddContributionForm';
-import { BulkImportModal } from '../components/BulkImportModal';
-import { BulkProjectContributionForm } from '../components/BulkProjectContributionForm';
+
+const NewMemberForm = lazy(() => import('../components/NewMemberForm').then(m => ({ default: m.NewMemberForm })));
+const EditMemberForm = lazy(() => import('../components/EditMemberForm').then(m => ({ default: m.EditMemberForm })));
+const AddContributionForm = lazy(() => import('../components/AddContributionForm').then(m => ({ default: m.AddContributionForm })));
+const BulkImportModal = lazy(() => import('../components/BulkImportModal').then(m => ({ default: m.BulkImportModal })));
+const BulkProjectContributionForm = lazy(() => import('../components/BulkProjectContributionForm').then(m => ({ default: m.BulkProjectContributionForm })));
 import { usePermissions } from '../hooks/usePermissions';
 import { downloadImage } from '../lib/image-utils';
 import { TierBadge } from '../components/TierBadge';
@@ -857,114 +858,116 @@ export function Members({ initialSearch, initialAction, initialTier }: MembersPr
         )
       )}
 
-      {showNewMemberForm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="glass-panel rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white/95 dark:bg-dark-surface/95 backdrop-blur border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Register New Member
-              </h2>
-              <button
-                onClick={() => setShowNewMemberForm(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <NewMemberForm
-                initialRegNo={searchQuery}
-                onSuccess={handleMemberCreated}
-                onCancel={() => setShowNewMemberForm(false)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showEditMemberForm && searchResult && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="glass-panel bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
-            <div className="sticky top-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between z-10">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Edit Member Profile & Credentials
-              </h2>
-              <button
-                onClick={() => setShowEditMemberForm(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <EditMemberForm
-                member={searchResult}
-                onSuccess={handleMemberUpdated}
-                onCancel={() => setShowEditMemberForm(false)}
-              />
+      <Suspense fallback={null}>
+        {showNewMemberForm && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+            <div className="glass-panel rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white/95 dark:bg-dark-surface/95 backdrop-blur border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Register New Member
+                </h2>
+                <button
+                  onClick={() => setShowNewMemberForm(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6">
+                <NewMemberForm
+                  initialRegNo={searchQuery}
+                  onSuccess={handleMemberCreated}
+                  onCancel={() => setShowNewMemberForm(false)}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {showAddContribution && searchResult && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="glass-panel rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white/95 dark:bg-dark-surface/95 backdrop-blur border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Add Contribution
-              </h2>
-              <button
-                onClick={() => setShowAddContribution(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <AddContributionForm
-                member={searchResult}
-                onSuccess={handleContributionAdded}
-                onCancel={() => setShowAddContribution(false)}
-              />
+        {showEditMemberForm && searchResult && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+            <div className="glass-panel bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+              <div className="sticky top-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between z-10">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Edit Member Profile & Credentials
+                </h2>
+                <button
+                  onClick={() => setShowEditMemberForm(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6">
+                <EditMemberForm
+                  member={searchResult}
+                  onSuccess={handleMemberUpdated}
+                  onCancel={() => setShowEditMemberForm(false)}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {showBulkImport && (
-        <BulkImportModal
-          onClose={() => setShowBulkImport(false)}
-          onSuccess={handleBulkImportSuccess}
-        />
-      )}
-
-      {showBulkProjectContribution && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="glass-panel rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white/95 dark:bg-dark-surface/95 backdrop-blur border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                Add Project Contributions (Bulk)
-              </h2>
-              <button
-                onClick={() => setShowBulkProjectContribution(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <BulkProjectContributionForm
-                onSuccess={() => {
-                  setShowBulkProjectContribution(false);
-                  loadMembers();
-                }}
-                onCancel={() => setShowBulkProjectContribution(false)}
-              />
+        {showAddContribution && searchResult && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+            <div className="glass-panel rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white/95 dark:bg-dark-surface/95 backdrop-blur border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Add Contribution
+                </h2>
+                <button
+                  onClick={() => setShowAddContribution(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6">
+                <AddContributionForm
+                  member={searchResult}
+                  onSuccess={handleContributionAdded}
+                  onCancel={() => setShowAddContribution(false)}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {showBulkImport && (
+          <BulkImportModal
+            onClose={() => setShowBulkImport(false)}
+            onSuccess={handleBulkImportSuccess}
+          />
+        )}
+
+        {showBulkProjectContribution && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+            <div className="glass-panel rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white/95 dark:bg-dark-surface/95 backdrop-blur border-b border-gray-200 dark:border-dark-border p-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Add Project Contributions (Bulk)
+                </h2>
+                <button
+                  onClick={() => setShowBulkProjectContribution(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6">
+                <BulkProjectContributionForm
+                  onSuccess={() => {
+                    setShowBulkProjectContribution(false);
+                    loadMembers();
+                  }}
+                  onCancel={() => setShowBulkProjectContribution(false)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </Suspense>
     </div>
   );
 }

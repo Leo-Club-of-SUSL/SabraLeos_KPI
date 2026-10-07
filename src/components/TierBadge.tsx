@@ -1,5 +1,5 @@
 import { Shield, Sparkles, Award, Crown, Medal, UserCheck } from 'lucide-react';
-import { getTier, type TierKey, type TierInfo } from '../lib/tier-calculator';
+import { getTier, TIERS_CONFIG, type TierKey, type TierInfo } from '../lib/tier-calculator';
 
 interface TierBadgeProps {
   points?: number;
@@ -18,7 +18,7 @@ export function TierBadge({
   showPoints = false,
   className = '',
 }: TierBadgeProps) {
-  const tier: TierInfo = tierKey ? getTier(getMinPointsForTier(tierKey)) : getTier(points ?? 0);
+  const tier: TierInfo = tierKey ? TIERS_CONFIG[tierKey] : getTier(points ?? 0);
 
   const getTierIcon = () => {
     const iconSize = size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-3.5 h-3.5' : size === 'lg' ? 'w-5 h-5' : 'w-4 h-4';
@@ -60,13 +60,3 @@ export function TierBadge({
   );
 }
 
-function getMinPointsForTier(key: TierKey): number {
-  switch (key) {
-    case 'platinum': return 800;
-    case 'gold': return 500;
-    case 'silver': return 300;
-    case 'bronze': return 150;
-    case 'official': return 50;
-    case 'prospect': return 0;
-  }
-}

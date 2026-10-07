@@ -156,6 +156,10 @@ export type Database = {
         Args: Record<never, never>;
         Returns: string;
       };
+      get_dashboard_stats: {
+        Args: Record<never, never>;
+        Returns: Json;
+      };
       get_my_session_context: {
         Args: Record<never, never>;
         Returns: Json;

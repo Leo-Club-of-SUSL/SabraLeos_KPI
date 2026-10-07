@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import { memberService } from './member-service';
 import { systemService } from './system-service';
 import type { MemberInsert } from '../types/database';
@@ -24,9 +23,10 @@ export const bulkImportService = {
      * Generate and download a template Excel file
      */
     async downloadTemplate(): Promise<void> {
-        const [faculties, batches] = await Promise.all([
+        const [faculties, batches, XLSX] = await Promise.all([
             systemService.getFaculties(),
             systemService.getBatches(),
+            import('xlsx'),
         ]);
 
         const sampleFaculty = faculties[0]?.name || 'Faculty of Computing';
@@ -77,6 +77,7 @@ export const bulkImportService = {
      * Parse Excel file and extract member data
      */
     async parseExcelFile(file: File): Promise<MemberImportRow[]> {
+        const XLSX = await import('xlsx');
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
 
@@ -140,7 +141,8 @@ export const bulkImportService = {
     },
 
     /**
-     * Import members from parsed Excel data
+     * Import members from parsed Excel data in chunks of 100 rows per request,
+     * with automatic row-by-row retry fallback if a chunk fails.
      */
     async importMembers(rows: MemberImportRow[]): Promise<ImportResult> {
         const result: ImportResult = {
@@ -149,11 +151,19 @@ export const bulkImportService = {
             errors: [],
         };
 
+        const validCandidates: Array<{
+            rowNumber: number;
+            row: MemberImportRow;
+            memberData: MemberInsert;
+        }> = [];
+
+        const seenRegNos = new Set<string>();
+
+        // Step 1: Client-side row validation and in-file duplicate detection
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            const rowNumber = i + 2; // +2 because Excel is 1-indexed and has a header row
+            const rowNumber = i + 2; // Excel 1-indexed with header row
 
-            // Validate row
             const validation = this.validateMemberRow(row);
             if (!validation.valid) {
                 result.failed++;
@@ -165,40 +175,105 @@ export const bulkImportService = {
                 continue;
             }
 
-            try {
-                // Check if member already exists
-                const existing = await memberService.getByRegNo(row.reg_no.trim());
-                if (existing) {
-                    result.failed++;
-                    result.errors.push({
-                        row: rowNumber,
-                        error: `Member with registration number ${row.reg_no} already exists`,
-                        data: row,
-                    });
-                    continue;
-                }
-
-                // Create member
-                const memberData: MemberInsert = {
-                    reg_no: row.reg_no.trim().toUpperCase(),
-                    full_name: row.full_name.trim(),
-                    name_with_initials: row.name_with_initials.trim(),
-                    batch: row.batch.toString().trim(),
-                    faculty: row.faculty.trim(),
-                    whatsapp: row.whatsapp.toString().trim(),
-                    my_lci_num: row.my_lci_num ? row.my_lci_num.toString().trim() : null,
-                    total_points: 0,
-                };
-
-                await memberService.create(memberData);
-                result.success++;
-            } catch (error) {
+            const cleanRegNo = row.reg_no.trim().toUpperCase();
+            if (seenRegNos.has(cleanRegNo)) {
                 result.failed++;
                 result.errors.push({
                     row: rowNumber,
-                    error: error instanceof Error ? error.message : 'Unknown error occurred',
+                    error: `Duplicate registration number ${row.reg_no} in upload file`,
                     data: row,
                 });
+                continue;
+            }
+            seenRegNos.add(cleanRegNo);
+
+            const memberData: MemberInsert = {
+                reg_no: cleanRegNo,
+                full_name: row.full_name.trim(),
+                name_with_initials: row.name_with_initials.trim(),
+                batch: row.batch.toString().trim(),
+                faculty: row.faculty.trim(),
+                whatsapp: row.whatsapp.toString().trim(),
+                my_lci_num: row.my_lci_num ? row.my_lci_num.toString().trim() : null,
+                total_points: 0,
+            };
+
+            validCandidates.push({
+                rowNumber,
+                row,
+                memberData,
+            });
+        }
+
+        if (validCandidates.length === 0) {
+            return result;
+        }
+
+        // Step 2: Batch duplicate check against database in chunks of 100
+        const CHUNK_SIZE = 100;
+        const existingInDb = new Set<string>();
+
+        for (let i = 0; i < validCandidates.length; i += CHUNK_SIZE) {
+            const chunk = validCandidates.slice(i, i + CHUNK_SIZE);
+            const regNos = chunk.map(c => c.memberData.reg_no);
+            try {
+                const existing = await memberService.checkExistingRegNos(regNos);
+                existing.forEach(r => existingInDb.add(r));
+            } catch (err) {
+                console.warn('Batch check error, falling back to individual checks for chunk:', err);
+                for (const candidate of chunk) {
+                    try {
+                        const exists = await memberService.getByRegNo(candidate.memberData.reg_no);
+                        if (exists) existingInDb.add(candidate.memberData.reg_no);
+                    } catch {
+                        // ignore and let insert handle it
+                    }
+                }
+            }
+        }
+
+        // Filter out candidates that already exist in DB
+        const toInsert: Array<{
+            rowNumber: number;
+            row: MemberImportRow;
+            memberData: MemberInsert;
+        }> = [];
+
+        for (const candidate of validCandidates) {
+            if (existingInDb.has(candidate.memberData.reg_no)) {
+                result.failed++;
+                result.errors.push({
+                    row: candidate.rowNumber,
+                    error: `Member with registration number ${candidate.row.reg_no} already exists`,
+                    data: candidate.row,
+                });
+            } else {
+                toInsert.push(candidate);
+            }
+        }
+
+        // Step 3: Insert valid new members in chunks of 100 with row-by-row fallback
+        for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+            const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+            try {
+                await memberService.createMany(chunk.map(c => c.memberData));
+                result.success += chunk.length;
+            } catch (chunkError) {
+                console.warn('Chunk insert failed, retrying row-by-row to isolate failing records:', chunkError);
+                // Fallback: retry only this chunk row-by-row
+                for (const item of chunk) {
+                    try {
+                        await memberService.create(item.memberData);
+                        result.success++;
+                    } catch (rowError) {
+                        result.failed++;
+                        result.errors.push({
+                            row: item.rowNumber,
+                            error: rowError instanceof Error ? rowError.message : 'Failed to create member',
+                            data: item.row,
+                        });
+                    }
+                }
             }
         }
 
