@@ -287,15 +287,19 @@ CREATE POLICY "avenues_delete_super_admin"
 
 -- G. public.system_logs
 DROP POLICY IF EXISTS "system_logs_select_super_admin" ON public.system_logs;
-CREATE POLICY "system_logs_select_super_admin"
+DROP POLICY IF EXISTS "system_logs_select_officer" ON public.system_logs;
+DROP POLICY IF EXISTS "system_logs_select" ON public.system_logs;
+CREATE POLICY "system_logs_select_officer"
     ON public.system_logs FOR SELECT TO authenticated
-    USING ((SELECT public.is_super_admin()));
+    USING ((SELECT public.is_officer()));
 
 -- H. public.security_events
 DROP POLICY IF EXISTS "security_events_select_super_admin" ON public.security_events;
-CREATE POLICY "security_events_select_super_admin"
+DROP POLICY IF EXISTS "security_events_select_officer" ON public.security_events;
+DROP POLICY IF EXISTS "security_events_select" ON public.security_events;
+CREATE POLICY "security_events_select_officer"
     ON public.security_events FOR SELECT TO authenticated
-    USING ((SELECT public.is_super_admin()));
+    USING ((SELECT public.is_officer()));
 
 -- I. public.security_alerts
 DROP POLICY IF EXISTS "security_alerts_super_admin" ON public.security_alerts;
