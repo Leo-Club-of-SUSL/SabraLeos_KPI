@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { userService } from '../services/user-service';
 import { memberService } from '../services/member-service';
 import { systemService, type SecurityAlert } from '../services/system-service';
@@ -7,10 +7,16 @@ import {
   Settings, Users as UsersIcon, ListTree, UserCheck, UserX, 
   User, KeyRound, ShieldAlert, AlertTriangle, CheckCircle2, Copy, Check, RefreshCw, EyeOff, ShieldCheck
 } from 'lucide-react';
-import { SystemDataManagement } from '../components/SystemDataManagement';
-import { SystemLogs } from '../components/SystemLogs';
 import type { AppUser, Member, AppUserRole } from '../types/database';
 import { usePermissions } from '../hooks/usePermissions';
+import { PageSkeleton } from '../components/PageSkeleton';
+
+const SystemDataManagement = lazy(() =>
+  import('../components/SystemDataManagement').then(m => ({ default: m.SystemDataManagement }))
+);
+const SystemLogs = lazy(() =>
+  import('../components/SystemLogs').then(m => ({ default: m.SystemLogs }))
+);
 
 export function UserManagement() {
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -578,8 +584,10 @@ export function UserManagement() {
         </div>
       )}
 
-      {activeTab === 'system' && <SystemDataManagement />}
-      {activeTab === 'logs' && <SystemLogs />}
+      <Suspense fallback={<PageSkeleton />}>
+        {activeTab === 'system' && <SystemDataManagement />}
+        {activeTab === 'logs' && <SystemLogs />}
+      </Suspense>
 
       {showCreateForm && (
         <UserModal

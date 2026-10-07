@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import { memberService } from './member-service';
 import { systemService } from './system-service';
 import type { MemberInsert } from '../types/database';
@@ -24,9 +23,10 @@ export const bulkImportService = {
      * Generate and download a template Excel file
      */
     async downloadTemplate(): Promise<void> {
-        const [faculties, batches] = await Promise.all([
+        const [faculties, batches, XLSX] = await Promise.all([
             systemService.getFaculties(),
             systemService.getBatches(),
+            import('xlsx'),
         ]);
 
         const sampleFaculty = faculties[0]?.name || 'Faculty of Computing';
@@ -77,6 +77,7 @@ export const bulkImportService = {
      * Parse Excel file and extract member data
      */
     async parseExcelFile(file: File): Promise<MemberImportRow[]> {
+        const XLSX = await import('xlsx');
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
 

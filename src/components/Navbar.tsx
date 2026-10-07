@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import {
@@ -13,7 +13,10 @@ import {
   X,
   KeyRound,
 } from 'lucide-react';
-import { ChangePasswordModal } from './ChangePasswordModal';
+
+const ChangePasswordModal = lazy(() =>
+  import('./ChangePasswordModal').then(m => ({ default: m.ChangePasswordModal }))
+);
 
 import { usePermissions } from '../hooks/usePermissions';
 
@@ -179,7 +182,9 @@ export function Navbar({ currentPage = 'dashboard', onNavigate }: NavbarProps) {
       </div>
 
       {showPasswordModal && (
-        <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+        <Suspense fallback={null}>
+          <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+        </Suspense>
       )}
     </nav>
   );

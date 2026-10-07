@@ -7,8 +7,6 @@ import type { Member, Contribution, Faculty } from '../types/database';
 import { ExportOptionsModal, type ColumnOption } from '../components/ExportOptionsModal';
 import { TierBadge } from '../components/TierBadge';
 import { getTier, TIERS_CONFIG } from '../lib/tier-calculator';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 export function Reports() {
   const [members, setMembers] = useState<Member[]>([]);
@@ -110,7 +108,7 @@ export function Reports() {
     { key: 'whatsapp', label: 'WhatsApp' },
   ];
 
-  const handleExport = (selectedColumns: string[], includeHeaders: boolean, format: 'csv' | 'pdf') => {
+  const handleExport = async (selectedColumns: string[], includeHeaders: boolean, format: 'csv' | 'pdf') => {
     const memberContributions = new Map<string, number>();
     contributions.forEach((contrib) => {
       const current = memberContributions.get(contrib.member_reg_no) || 0;
@@ -145,6 +143,11 @@ export function Reports() {
       a.click();
       window.URL.revokeObjectURL(url);
     } else {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
+
       const doc = new jsPDF();
 
       doc.setFontSize(18);

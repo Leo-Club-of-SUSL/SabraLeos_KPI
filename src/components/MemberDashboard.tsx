@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { memberService } from '../services/member-service';
 import { contributionService } from '../services/contribution-service';
@@ -7,8 +7,11 @@ import type { Member, Contribution, Faculty, Batch } from '../types/database';
 import { TierBadge } from './TierBadge';
 import { TierProgressBar } from './TierProgressBar';
 import { TierOverviewCard } from './TierOverviewCard';
-import { ChangePasswordModal } from './ChangePasswordModal';
 import { getTier } from '../lib/tier-calculator';
+
+const ChangePasswordModal = lazy(() =>
+  import('./ChangePasswordModal').then(m => ({ default: m.ChangePasswordModal }))
+);
 import {
   Trophy,
   Award,
@@ -871,7 +874,9 @@ export function MemberDashboard() {
 
       {/* Password Change Modal */}
       {showPasswordModal && (
-        <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+        <Suspense fallback={null}>
+          <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+        </Suspense>
       )}
     </div>
   );
