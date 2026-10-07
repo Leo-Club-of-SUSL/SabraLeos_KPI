@@ -81,7 +81,7 @@ export function SystemLogs() {
       return {
         id: `act-${item.id || Math.random()}`,
         source: 'activity',
-        timestamp: String(item.timestamp || new Date().toISOString()),
+        timestamp: String(item.created_at || item.timestamp || new Date().toISOString()),
         actor_name: String(item.user_name || 'System Operator'),
         actor_id: (item.user_id as string) || null,
         action: act,

@@ -42,14 +42,21 @@ export const logService = {
    * Read system audit logs. Only super_admin can read (enforced by RLS).
    */
   async getLogs() {
-    const { data, error } = await supabase
-      .from('system_logs')
-      .select('id, user_id, user_name, action, entity_type, entity_id, details, old_value, new_value, created_at')
-      .order('created_at', { ascending: false })
-      .limit(200);
+    try {
+      const { data, error } = await supabase
+        .from('system_logs')
+        .select('id, user_id, user_name, action, entity_type, entity_id, details, old_value, new_value, created_at')
+        .order('created_at', { ascending: false })
+        .limit(200);
 
-    if (error) throw error;
-    return data || [];
+      if (error) {
+        console.warn('System logs fetch warning:', error.message);
+        return [];
+      }
+      return data || [];
+    } catch {
+      return [];
+    }
   },
 
   /**
