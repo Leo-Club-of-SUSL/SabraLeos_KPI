@@ -12,9 +12,13 @@ import {
   ArrowLeft,
   Loader2,
   Check,
+  KeyRound,
+  Mail,
+  UserCheck,
 } from 'lucide-react';
 import {
   bulkImportService,
+  generateDefaultPassword,
   type ImportResult,
   type StagedMemberRow,
 } from '../services/bulk-import-service';
@@ -44,6 +48,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
   const [stagedRows, setStagedRows] = useState<StagedMemberRow[]>([]);
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [createPortalAccounts, setCreatePortalAccounts] = useState(true);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
 
@@ -163,12 +168,20 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
       const updated = prev.map((row) => {
         if (row.id !== id) return row;
         let formattedValue = value;
+        let updatedPassword = row.password;
+
         if (field === 'reg_no') {
           formattedValue = value.toUpperCase();
+          // If password was using default pattern, update suggested password with new reg_no
+          if (!row.password || row.password.startsWith('Leo@')) {
+            updatedPassword = generateDefaultPassword(formattedValue);
+          }
         }
+
         return {
           ...row,
           [field]: formattedValue,
+          password: updatedPassword,
         };
       });
       return revalidate(updated);
@@ -197,6 +210,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
   const totalCount = stagedRows.length;
   const validCount = stagedRows.filter((r) => r.isValid).length;
   const errorCount = stagedRows.filter((r) => !r.isValid).length;
+  const emailCount = stagedRows.filter((r) => r.email && r.email.includes('@')).length;
 
   // Filtered rows for the view
   const displayedRows = useMemo(() => {
@@ -217,7 +231,8 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
           r.name_with_initials.toLowerCase().includes(query) ||
           r.faculty.toLowerCase().includes(query) ||
           r.batch.toLowerCase().includes(query) ||
-          r.whatsapp.toLowerCase().includes(query)
+          r.whatsapp.toLowerCase().includes(query) ||
+          r.email.toLowerCase().includes(query)
       );
     }
 
@@ -232,7 +247,9 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
 
     setStep('IMPORTING');
     try {
-      const result = await bulkImportService.importMembers(validRowsToImport);
+      const result = await bulkImportService.importMembers(validRowsToImport, {
+        provisionAccounts: createPortalAccounts,
+      });
       setImportResult(result);
       setStep('COMPLETE');
       if (result.success > 0) {
@@ -271,10 +288,10 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 z-50 animate-in fade-in duration-200">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 z-50 animate-in fade-in duration-200">
       <div
-        className={`bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full flex flex-col transition-all duration-300 max-h-[92vh] ${
-          step === 'REVIEW_STAGED' ? 'max-w-7xl' : 'max-w-3xl'
+        className={`bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full flex flex-col transition-all duration-300 max-h-[95vh] ${
+          step === 'REVIEW_STAGED' ? 'max-w-[96vw]' : 'max-w-3xl'
         }`}
       >
         {/* Header */}
@@ -302,9 +319,9 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
               </h2>
               <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 mt-0.5">
                 {step === 'REVIEW_STAGED'
-                  ? `Extracted from ${selectedFile?.name}. Resolve any flagged issues or edit fields directly before adding.`
+                  ? `Extracted from ${selectedFile?.name}. Review emails, passwords, and details directly before adding.`
                   : step === 'IMPORTING'
-                  ? 'Batching and inserting verified records into the database...'
+                  ? 'Batching and inserting verified records and provisioning member portal logins...'
                   : step === 'COMPLETE'
                   ? 'Review the import outcome below.'
                   : 'Onboard multiple Leo members at once using an Excel template with live Faculty & Batch options.'}
@@ -335,7 +352,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                       Download Official Excel Template
                     </h3>
                     <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
-                      Includes pre-configured columns and a dedicated <strong>Valid_Selections</strong> sheet populated with all active <strong>Faculties</strong> and <strong>Batches</strong> currently registered in Nexus KPI.
+                      Includes pre-configured columns (including <strong>Email</strong> and <strong>Password</strong>) and a dedicated <strong>Valid_Selections</strong> sheet populated with all active <strong>Faculties</strong> and <strong>Batches</strong>.
                     </p>
                     <div className="flex flex-wrap items-center gap-3">
                       <button
@@ -364,7 +381,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                       Upload Filled Excel Sheet
                     </h3>
                     <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
-                      Upload your populated spreadsheet. The system will parse the records and present an <strong>interactive verification screen</strong> so you can inspect, edit, or resolve errors before importing.
+                      Upload your populated spreadsheet. The system will parse the records and present an <strong>interactive verification screen</strong> where you can edit names, emails, passwords, and faculties directly before saving.
                     </p>
 
                     <input
@@ -383,7 +400,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                           Extracting & Validating Records...
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Checking for existing members and verifying faculties/batches
+                          Checking for existing members and verifying emails, passwords, and faculties
                         </p>
                       </div>
                     ) : (
@@ -430,9 +447,9 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                 </h4>
                 <ul className="text-xs text-gray-600 dark:text-gray-300 space-y-1.5 list-disc list-inside">
                   <li>Registration number, Full name, Name with initials, Batch, Faculty, and WhatsApp are required.</li>
+                  <li><strong>Email & Password</strong>: Enter an email to automatically create a Member Portal login account. If password is left blank, it defaults to <code>Leo@&lt;RegNo&gt;2026!</code>.</li>
                   <li>WhatsApp numbers are automatically standardized (e.g. <code>0771234567</code> becomes <code>+94771234567</code>).</li>
                   <li>Any duplicate registration numbers or typos can be edited directly on the next screen before importing.</li>
-                  <li>You do not need to delete sample rows manually if you update their values.</li>
                 </ul>
               </div>
             </div>
@@ -442,7 +459,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
           {step === 'REVIEW_STAGED' && (
             <div className="space-y-4">
               {/* Summary Stats Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-center justify-between">
                   <div>
                     <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wider block">
@@ -478,6 +495,18 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                   </div>
                   <AlertCircle className="w-8 h-8 text-rose-500 opacity-60" />
                 </div>
+
+                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider block">
+                      With Portal Email
+                    </span>
+                    <span className="text-2xl font-black text-purple-900 dark:text-purple-100">
+                      {emailCount}
+                    </span>
+                  </div>
+                  <UserCheck className="w-8 h-8 text-purple-500 opacity-60" />
+                </div>
               </div>
 
               {/* Status Banner */}
@@ -507,49 +536,63 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
               )}
 
               {/* Toolbar & Filter Tabs */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-1">
                 {/* Tabs */}
-                <div className="flex bg-gray-100 dark:bg-gray-700/60 p-1 rounded-xl">
-                  <button
-                    onClick={() => setFilterTab('all')}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      filterTab === 'all'
-                        ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
-                        : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                    }`}
-                  >
-                    All Records ({totalCount})
-                  </button>
-                  <button
-                    onClick={() => setFilterTab('valid')}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      filterTab === 'valid'
-                        ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                        : 'text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400'
-                    }`}
-                  >
-                    Ready ({validCount})
-                  </button>
-                  <button
-                    onClick={() => setFilterTab('errors')}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      filterTab === 'errors'
-                        ? 'bg-white dark:bg-gray-800 text-rose-600 dark:text-rose-400 shadow-sm'
-                        : 'text-gray-600 dark:text-gray-300 hover:text-rose-600 dark:hover:text-rose-400'
-                    }`}
-                  >
-                    Issues ({errorCount})
-                  </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex bg-gray-100 dark:bg-gray-700/60 p-1 rounded-xl">
+                    <button
+                      onClick={() => setFilterTab('all')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        filterTab === 'all'
+                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      All Records ({totalCount})
+                    </button>
+                    <button
+                      onClick={() => setFilterTab('valid')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        filterTab === 'valid'
+                          ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400'
+                      }`}
+                    >
+                      Ready ({validCount})
+                    </button>
+                    <button
+                      onClick={() => setFilterTab('errors')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        filterTab === 'errors'
+                          ? 'bg-white dark:bg-gray-800 text-rose-600 dark:text-rose-400 shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-rose-600 dark:hover:text-rose-400'
+                      }`}
+                    >
+                      Issues ({errorCount})
+                    </button>
+                  </div>
+
+                  {/* Provision Accounts Toggle */}
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/40 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={createPortalAccounts}
+                      onChange={(e) => setCreatePortalAccounts(e.target.checked)}
+                      className="w-4 h-4 text-maroon-600 rounded border-gray-300 dark:border-gray-600 focus:ring-maroon-500"
+                    />
+                    <KeyRound className="w-3.5 h-3.5 text-maroon-600 dark:text-maroon-400" />
+                    <span>Auto-create Member Portal logins for members with email</span>
+                  </label>
                 </div>
 
                 {/* Search */}
-                <div className="relative flex-1 sm:max-w-xs">
+                <div className="relative flex-1 lg:max-w-xs">
                   <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search extracted rows..."
+                    placeholder="Search by name, reg, email, faculty..."
                     className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-maroon-500 focus:outline-none"
                   />
                   {searchQuery && (
@@ -572,19 +615,21 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                         <th className="py-2.5 px-3 w-16 text-center">Status</th>
                         <th className="py-2.5 px-2 w-12 text-center">Row</th>
                         <th className="py-2.5 px-3 min-w-[130px]">Reg No *</th>
-                        <th className="py-2.5 px-3 min-w-[160px]">Full Name *</th>
-                        <th className="py-2.5 px-3 min-w-[140px]">Name with Initials *</th>
-                        <th className="py-2.5 px-3 min-w-[180px]">Faculty *</th>
-                        <th className="py-2.5 px-3 min-w-[130px]">Batch *</th>
+                        <th className="py-2.5 px-3 min-w-[150px]">Full Name *</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Name with Initials *</th>
+                        <th className="py-2.5 px-3 min-w-[170px]">Faculty *</th>
+                        <th className="py-2.5 px-3 min-w-[120px]">Batch *</th>
                         <th className="py-2.5 px-3 min-w-[130px]">WhatsApp *</th>
-                        <th className="py-2.5 px-3 min-w-[110px]">MyLCI No</th>
+                        <th className="py-2.5 px-3 min-w-[160px]">Email (Portal Login)</th>
+                        <th className="py-2.5 px-3 min-w-[150px]">Password</th>
+                        <th className="py-2.5 px-3 min-w-[100px]">MyLCI No</th>
                         <th className="py-2.5 px-2 w-12 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700/60">
                       {displayedRows.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                          <td colSpan={12} className="py-8 text-center text-gray-500 dark:text-gray-400">
                             No records match the current filter.
                           </td>
                         </tr>
@@ -596,6 +641,8 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                           const hasFacultyError = row.errors.some((e) => e.toLowerCase().includes('faculty'));
                           const hasBatchError = row.errors.some((e) => e.toLowerCase().includes('batch'));
                           const hasPhoneError = row.errors.some((e) => e.toLowerCase().includes('whatsapp') || e.toLowerCase().includes('phone'));
+                          const hasEmailError = row.errors.some((e) => e.toLowerCase().includes('email'));
+                          const hasPasswordError = row.errors.some((e) => e.toLowerCase().includes('password'));
 
                           return (
                             <tr
@@ -711,7 +758,6 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                                       : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
                                   }`}
                                 >
-                                  {/* If the current value is not in active faculties, show it as invalid option */}
                                   {!faculties.some(
                                     (f) => f.name.toLowerCase().trim() === row.faculty.toLowerCase().trim()
                                   ) && (
@@ -791,6 +837,52 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                                 )}
                               </td>
 
+                              {/* Email (Portal Login) */}
+                              <td className="py-2 px-3 align-top">
+                                <div className="relative">
+                                  <input
+                                    type="email"
+                                    value={row.email}
+                                    onChange={(e) => handleFieldChange(row.id, 'email', e.target.value)}
+                                    placeholder="member@email.com"
+                                    className={`w-full pl-6 pr-2 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                      hasEmailError
+                                        ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                        : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                    }`}
+                                  />
+                                  <Mail className="w-3.5 h-3.5 text-gray-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
+                                {hasEmailError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Invalid email format
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* Password */}
+                              <td className="py-2 px-3 align-top">
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    value={row.password}
+                                    onChange={(e) => handleFieldChange(row.id, 'password', e.target.value)}
+                                    placeholder="Leo@RegNo2026!"
+                                    className={`w-full pl-6 pr-2 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border font-mono focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                      hasPasswordError
+                                        ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                        : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                    }`}
+                                  />
+                                  <KeyRound className="w-3.5 h-3.5 text-gray-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
+                                {hasPasswordError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Min 6 characters
+                                  </p>
+                                )}
+                              </td>
+
                               {/* MyLCI Number */}
                               <td className="py-2 px-3 align-top">
                                 <input
@@ -834,7 +926,7 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                   Importing Members into Nexus KPI
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-md mx-auto">
-                  Adding verified member records in chunked batches and calculating initial points...
+                  Adding verified member records and provisioning portal login accounts...
                 </p>
               </div>
             </div>
@@ -843,14 +935,24 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
           {/* STEP 4: IMPORT COMPLETE */}
           {step === 'COMPLETE' && importResult && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 text-center">
                   <CheckCircle className="w-8 h-8 text-emerald-600 dark:text-emerald-400 mx-auto mb-2" />
                   <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider block">
-                    Successfully Added
+                    Members Added
                   </span>
                   <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1 block">
                     {importResult.success}
+                  </span>
+                </div>
+
+                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-5 text-center">
+                  <UserCheck className="w-8 h-8 text-purple-600 dark:text-purple-400 mx-auto mb-2" />
+                  <span className="text-xs font-semibold text-purple-800 dark:text-purple-300 uppercase tracking-wider block">
+                    Portal Accounts Created
+                  </span>
+                  <span className="text-3xl font-black text-purple-600 dark:text-purple-400 mt-1 block">
+                    {importResult.provisionedAccounts || 0}
                   </span>
                 </div>
 
@@ -874,6 +976,21 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
                     {importResult.errors.map((err, i) => (
                       <div key={i} className="p-2 bg-white dark:bg-gray-800 rounded border border-rose-200 dark:border-rose-900/40">
                         <strong>Row {err.row}:</strong> {err.error}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {importResult.provisionErrors && importResult.provisionErrors.length > 0 && (
+                <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Portal Account Warnings ({importResult.provisionErrors.length}):
+                  </h4>
+                  <div className="max-h-36 overflow-y-auto space-y-1 text-xs text-amber-800 dark:text-amber-300">
+                    {importResult.provisionErrors.map((err, i) => (
+                      <div key={i}>
+                        • Member {err.reg_no}: {err.error}
                       </div>
                     ))}
                   </div>

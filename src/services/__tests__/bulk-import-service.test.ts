@@ -190,6 +190,7 @@ describe('bulkImportService Chunking & Batching', () => {
         whatsapp: '+94771234567',
         my_lci_num: '',
         email: '',
+        password: 'Leo@22FIX0012026!',
         isValid: false,
         errors: ['Faculty error', 'Batch error'],
       },

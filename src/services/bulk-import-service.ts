@@ -1,5 +1,6 @@
 import { memberService } from './member-service';
 import { systemService } from './system-service';
+import { userService } from './user-service';
 import { validatePhoneNumber, validateRegNo } from '../lib/sanitize';
 import type { MemberInsert, Faculty, Batch as BatchType } from '../types/database';
 
@@ -7,6 +8,8 @@ export interface ImportResult {
     success: number;
     failed: number;
     errors: Array<{ row: number; error: string; data?: unknown }>;
+    provisionedAccounts?: number;
+    provisionErrors?: Array<{ reg_no: string; error: string }>;
 }
 
 export interface MemberImportRow {
@@ -18,6 +21,7 @@ export interface MemberImportRow {
     whatsapp: string;
     my_lci_num?: string;
     email?: string;
+    password?: string;
 }
 
 export interface StagedMemberRow {
@@ -29,8 +33,9 @@ export interface StagedMemberRow {
     batch: string;
     faculty: string;
     whatsapp: string;
-    my_lci_num: string;
     email: string;
+    password: string;
+    my_lci_num: string;
     isValid: boolean;
     errors: string[];
     isDuplicateInFile?: boolean;
@@ -49,10 +54,18 @@ export function normalizePhoneNumber(raw: string): string {
     return trimmed;
 }
 
+/**
+ * Generates a default suggested temporary password based on registration number
+ */
+export function generateDefaultPassword(regNo: string): string {
+    const clean = (regNo || '').replace(/[^a-zA-Z0-9]/g, '');
+    return `Leo@${clean || 'Member'}2026!`;
+}
+
 export const bulkImportService = {
     /**
      * Generate and download an enhanced template Excel file with:
-     * 1. 'Members' data entry sheet with real sample data
+     * 1. 'Members' entry sheet including email and password columns
      * 2. 'Valid_Selections' sheet listing active Faculties and Batches from DB with instructions
      */
     async downloadTemplate(): Promise<void> {
@@ -74,8 +87,9 @@ export const bulkImportService = {
                 batch: sampleBatch,
                 faculty: sampleFaculty,
                 whatsapp: '+94771234567',
-                my_lci_num: '12345678',
                 email: 'johndoe@example.com',
+                password: 'Leo@22ABC12342026!',
+                my_lci_num: '12345678',
             },
             {
                 reg_no: '22ABC1235',
@@ -84,8 +98,9 @@ export const bulkImportService = {
                 batch: sampleBatch,
                 faculty: sampleFaculty,
                 whatsapp: '+94777654321',
-                my_lci_num: '',
                 email: 'jane@example.com',
+                password: 'Leo@22ABC12352026!',
+                my_lci_num: '',
             },
         ];
 
@@ -99,12 +114,13 @@ export const bulkImportService = {
             { wch: 16 }, // batch
             { wch: 35 }, // faculty
             { wch: 18 }, // whatsapp
-            { wch: 16 }, // my_lci_num
             { wch: 26 }, // email
+            { wch: 22 }, // password
+            { wch: 16 }, // my_lci_num
         ];
 
         // Sheet 2: Reference & Valid Selections Sheet
-        const maxRows = Math.max(faculties.length, batches.length, 8);
+        const maxRows = Math.max(faculties.length, batches.length, 9);
         const referenceData: Array<{
             'Available Faculties (Exact)': string;
             'Available Batches (Exact)': string;
@@ -118,8 +134,9 @@ export const bulkImportService = {
             'Faculty: Must match an existing faculty or be selected in the Nexus KPI preview.',
             'Batch: Must match an existing batch or be selected in the Nexus KPI preview.',
             'WhatsApp Number: International (+9477...) or local format (077...).',
+            'Email: (Optional) Used to provision member login on the Leo Member Portal.',
+            'Password: (Optional) Temporary login password (min 6 chars). Defaults to Leo@<RegNo>2026! if omitted.',
             'MyLCI Number: (Optional) Lions Club International ID if available.',
-            'Email: (Optional) Used for Member Portal login access.',
         ];
 
         for (let i = 0; i < maxRows; i++) {
@@ -134,7 +151,7 @@ export const bulkImportService = {
         optionsWorksheet['!cols'] = [
             { wch: 36 }, // Faculties
             { wch: 22 }, // Batches
-            { wch: 75 }, // Guidelines
+            { wch: 80 }, // Guidelines
         ];
 
         const workbook = XLSX.utils.book_new();
@@ -182,16 +199,19 @@ export const bulkImportService = {
 
                         const rawWhatsapp = findValue(['whatsapp', 'whatsapp_number', 'phone', 'contact', 'mobile', 'whatsapp no', 'whatsapp number']);
                         const normalizedWhatsapp = normalizePhoneNumber(rawWhatsapp);
+                        const cleanRegNo = findValue(['reg_no', 'regno', 'registration_number', 'reg_number', 'reg no', 'registration number']).toUpperCase();
+                        const parsedPassword = findValue(['password', 'temp_password', 'temporary_password', 'pass', 'initial_password', 'pwd']);
 
                         return {
-                            reg_no: findValue(['reg_no', 'regno', 'registration_number', 'reg_number', 'reg no', 'registration number']),
+                            reg_no: cleanRegNo,
                             full_name: findValue(['full_name', 'fullname', 'name', 'full name']),
                             name_with_initials: findValue(['name_with_initials', 'namewithinitials', 'initials', 'name with initials', 'name_initials']),
                             batch: findValue(['batch', 'academic_batch', 'academic batch']),
                             faculty: findValue(['faculty', 'department', 'faculty_name', 'faculty name']),
                             whatsapp: normalizedWhatsapp,
+                            email: findValue(['email', 'email_address', 'e-mail', 'email address', 'mail']),
+                            password: parsedPassword || generateDefaultPassword(cleanRegNo),
                             my_lci_num: findValue(['my_lci_num', 'mylci', 'lci_num', 'lci_number', 'mylci_num', 'my lci number', 'my lci num']),
-                            email: findValue(['email', 'email_address', 'e-mail', 'email address']),
                         };
                     });
 
@@ -244,6 +264,18 @@ export const bulkImportService = {
             errors.push('Invalid phone number format');
         }
 
+        if (row.email && typeof row.email === 'string' && row.email.trim() !== '') {
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) {
+                errors.push('Invalid email address format');
+            }
+        }
+
+        if (row.password && typeof row.password === 'string' && row.password.trim() !== '') {
+            if (row.password.trim().length < 6) {
+                errors.push('Password must be at least 6 characters');
+            }
+        }
+
         return {
             valid: errors.length === 0,
             errors,
@@ -288,17 +320,21 @@ export const bulkImportService = {
                 ? crypto.randomUUID()
                 : `row-${index}-${Date.now()}`;
 
+            const cleanRegNo = (row.reg_no || '').trim().toUpperCase();
+            const password = row.password ? row.password.trim() : generateDefaultPassword(cleanRegNo);
+
             return {
                 id,
                 rowNumber: index + 2, // Excel 1-indexed header + data
-                reg_no: (row.reg_no || '').trim().toUpperCase(),
+                reg_no: cleanRegNo,
                 full_name: (row.full_name || '').trim(),
                 name_with_initials: (row.name_with_initials || '').trim(),
                 batch: (row.batch || '').trim(),
                 faculty: (row.faculty || '').trim(),
                 whatsapp: normalizePhoneNumber(row.whatsapp || ''),
-                my_lci_num: (row.my_lci_num || '').trim(),
                 email: (row.email || '').trim(),
+                password,
+                my_lci_num: (row.my_lci_num || '').trim(),
                 isValid: true,
                 errors: [],
                 isDuplicateInFile: false,
@@ -396,9 +432,14 @@ export const bulkImportService = {
                 errors.push('Invalid phone number format (e.g. +94771234567)');
             }
 
-            // Optional email check
+            // Email check
             if (row.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) {
                 errors.push('Invalid email address format');
+            }
+
+            // Password check (if entered)
+            if (row.password.trim() && row.password.trim().length < 6) {
+                errors.push('Password must be at least 6 characters');
             }
 
             return {
@@ -415,12 +456,18 @@ export const bulkImportService = {
     /**
      * Import members from parsed Excel data or StagedMemberRows in chunks of 100 rows per request,
      * with automatic row-by-row retry fallback if a chunk fails.
+     * Optionally provisions Leo Member Portal login accounts for members who have an email address.
      */
-    async importMembers(rows: MemberImportRow[] | StagedMemberRow[]): Promise<ImportResult> {
+    async importMembers(
+        rows: MemberImportRow[] | StagedMemberRow[],
+        options?: { provisionAccounts?: boolean }
+    ): Promise<ImportResult> {
         const result: ImportResult = {
             success: 0,
             failed: 0,
             errors: [],
+            provisionedAccounts: 0,
+            provisionErrors: [],
         };
 
         if (!rows || rows.length === 0) {
@@ -436,6 +483,7 @@ export const bulkImportService = {
             rowNumber: number;
             row: MemberImportRow | StagedMemberRow;
             memberData: MemberInsert;
+            password?: string;
         }> = [];
 
         const seenRegNos = new Set<string>();
@@ -480,6 +528,9 @@ export const bulkImportService = {
             }
             seenRegNos.add(cleanRegNo);
 
+            const emailVal = (row as StagedMemberRow).email?.trim() || (row as MemberImportRow).email?.trim() || null;
+            const passwordVal = (row as StagedMemberRow).password?.trim() || (row as MemberImportRow).password?.trim() || generateDefaultPassword(cleanRegNo);
+
             const memberData: MemberInsert = {
                 reg_no: cleanRegNo,
                 full_name: row.full_name.trim(),
@@ -488,7 +539,7 @@ export const bulkImportService = {
                 faculty: row.faculty.trim(),
                 whatsapp: normalizePhoneNumber(row.whatsapp ? row.whatsapp.toString().trim() : ''),
                 my_lci_num: row.my_lci_num ? row.my_lci_num.toString().trim() : null,
-                email: (row as StagedMemberRow).email?.trim() || (row as MemberImportRow).email?.trim() || null,
+                email: emailVal,
                 total_points: 0,
             };
 
@@ -496,6 +547,7 @@ export const bulkImportService = {
                 rowNumber,
                 row,
                 memberData,
+                password: passwordVal,
             });
         }
 
@@ -531,6 +583,7 @@ export const bulkImportService = {
             rowNumber: number;
             row: MemberImportRow | StagedMemberRow;
             memberData: MemberInsert;
+            password?: string;
         }> = [];
 
         for (const candidate of validCandidates) {
@@ -547,11 +600,20 @@ export const bulkImportService = {
         }
 
         // Step 3: Insert valid new members in chunks of 100 with row-by-row fallback
+        const successfullyInserted: Array<{ reg_no: string; email: string | null; password?: string }> = [];
+
         for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
             const chunk = toInsert.slice(i, i + CHUNK_SIZE);
             try {
                 await memberService.createMany(chunk.map(c => c.memberData));
                 result.success += chunk.length;
+                chunk.forEach(c => {
+                    successfullyInserted.push({
+                        reg_no: c.memberData.reg_no,
+                        email: c.memberData.email || null,
+                        password: c.password,
+                    });
+                });
             } catch (chunkError) {
                 console.warn('Chunk insert failed, retrying row-by-row to isolate failing records:', chunkError);
                 // Fallback: retry only this chunk row-by-row
@@ -559,6 +621,11 @@ export const bulkImportService = {
                     try {
                         await memberService.create(item.memberData);
                         result.success++;
+                        successfullyInserted.push({
+                            reg_no: item.memberData.reg_no,
+                            email: item.memberData.email || null,
+                            password: item.password,
+                        });
                     } catch (rowError) {
                         result.failed++;
                         result.errors.push({
@@ -567,6 +634,35 @@ export const bulkImportService = {
                             data: item.row,
                         });
                     }
+                }
+            }
+        }
+
+        // Step 4: Optionally provision Member Portal login accounts for members with emails
+        if (options?.provisionAccounts && successfullyInserted.length > 0) {
+            const eligibleForProvision = successfullyInserted.filter(
+                m => m.email && m.email.includes('@')
+            );
+
+            for (let i = 0; i < eligibleForProvision.length; i += 100) {
+                const batch = eligibleForProvision.slice(i, i + 100);
+                const regNos = batch.map(b => b.reg_no);
+                const passwordsMap: Record<string, string> = {};
+                batch.forEach(b => {
+                    if (b.password) passwordsMap[b.reg_no] = b.password;
+                });
+
+                try {
+                    const provResults = await userService.provisionMembers(regNos, undefined, passwordsMap);
+                    provResults.forEach(pr => {
+                        if (pr.status === 'provisioned' || pr.status === 'already_provisioned') {
+                            result.provisionedAccounts = (result.provisionedAccounts || 0) + 1;
+                        } else if (pr.status === 'failed') {
+                            result.provisionErrors?.push({ reg_no: pr.reg_no, error: pr.message || 'Provisioning error' });
+                        }
+                    });
+                } catch (provErr) {
+                    console.warn('Batch account provisioning error:', provErr);
                 }
             }
         }
