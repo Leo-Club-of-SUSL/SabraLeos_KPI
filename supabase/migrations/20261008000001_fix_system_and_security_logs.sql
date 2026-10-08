@@ -116,6 +116,19 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Debounce: Don't insert duplicate LOGIN log within 15 seconds
+  IF EXISTS (
+    SELECT 1 FROM public.system_logs
+    WHERE user_id = v_user_id
+      AND action = 'LOGIN'
+      AND (
+        (created_at IS NOT NULL AND created_at > NOW() - INTERVAL '15 seconds') OR
+        (timestamp IS NOT NULL AND timestamp > NOW() - INTERVAL '15 seconds')
+      )
+  ) THEN
+    RETURN;
+  END IF;
+
   INSERT INTO public.system_logs (
     user_id,
     user_name,
@@ -141,6 +154,70 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.log_login() FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.log_login() TO authenticated;
+
+-- 5b. RPC: log_logout()
+CREATE OR REPLACE FUNCTION public.log_logout()
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_username TEXT;
+  v_user_id  UUID;
+  v_role     TEXT;
+BEGIN
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN RETURN; END IF;
+
+  SELECT role::text, username INTO v_role, v_username
+  FROM public.app_users
+  WHERE id = v_user_id
+    AND COALESCE(status, 'active') = 'active';
+
+  -- Only log officer logouts
+  IF v_role NOT IN ('viewer', 'editor', 'super_admin') THEN
+    RETURN;
+  END IF;
+
+  -- Debounce: Skip if already logged logout within 15 seconds
+  IF EXISTS (
+    SELECT 1 FROM public.system_logs
+    WHERE user_id = v_user_id
+      AND action = 'LOGOUT'
+      AND (
+        (created_at IS NOT NULL AND created_at > NOW() - INTERVAL '15 seconds') OR
+        (timestamp IS NOT NULL AND timestamp > NOW() - INTERVAL '15 seconds')
+      )
+  ) THEN
+    RETURN;
+  END IF;
+
+  INSERT INTO public.system_logs (
+    user_id,
+    user_name,
+    action,
+    details,
+    entity_type,
+    entity_id,
+    timestamp,
+    created_at
+  )
+  VALUES (
+    v_user_id,
+    COALESCE(v_username, 'Officer'),
+    'LOGOUT',
+    '{"method":"manual"}'::jsonb,
+    'session',
+    v_user_id::text,
+    NOW(),
+    NOW()
+  );
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.log_logout() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.log_logout() TO authenticated;
 
 -- 6. RPC: log_export()
 CREATE OR REPLACE FUNCTION public.log_export(p_details JSONB)
@@ -203,17 +280,20 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_actor_id  UUID;
-  v_username  TEXT;
-  v_details   JSONB;
+  v_actor_id        UUID;
+  v_effective_actor UUID;
+  v_username        TEXT;
+  v_details         JSONB;
 BEGIN
-  v_actor_id := auth.uid();
-  v_details  := COALESCE(p_details, '{}'::jsonb);
+  v_actor_id        := auth.uid();
+  v_effective_actor := COALESCE(v_actor_id, p_target_user_id);
+  v_details         := COALESCE(p_details, '{}'::jsonb);
 
-  IF v_actor_id IS NOT NULL AND NOT (v_details ? 'username') THEN
+  -- Always extract or find the username
+  IF NOT (v_details ? 'username') AND v_effective_actor IS NOT NULL THEN
     SELECT username INTO v_username
     FROM public.app_users
-    WHERE id = v_actor_id;
+    WHERE id = v_effective_actor;
 
     IF v_username IS NOT NULL THEN
       v_details := v_details || jsonb_build_object('username', v_username);
@@ -230,7 +310,7 @@ BEGIN
   VALUES (
     p_event_type,
     COALESCE(p_target_user_id, v_actor_id),
-    v_actor_id,
+    v_effective_actor,
     v_details,
     NOW()
   );
@@ -368,3 +448,21 @@ CREATE POLICY "security_events_select_officer"
         AND COALESCE(status, 'active') = 'active'
     )
   );
+
+-- 10. Backfill existing historical records to fix legacy "Security Guardian" / missing usernames
+UPDATE public.security_events se
+SET actor_id = COALESCE(se.actor_id, se.user_id),
+    details = COALESCE(se.details, '{}'::jsonb) || jsonb_build_object('username', au.username)
+FROM public.app_users au
+WHERE (se.user_id = au.id OR se.actor_id = au.id)
+  AND (se.actor_id IS NULL OR se.details IS NULL OR NOT (se.details ? 'username'));
+
+-- 11. Cleanup existing duplicate LOGIN entries in system_logs (keep newest)
+DELETE FROM public.system_logs a
+USING public.system_logs b
+WHERE a.id < b.id
+  AND a.action = 'LOGIN'
+  AND b.action = 'LOGIN'
+  AND a.user_id = b.user_id
+  AND ABS(EXTRACT(EPOCH FROM (COALESCE(a.created_at, a.timestamp) - COALESCE(b.created_at, b.timestamp)))) < 10;
+

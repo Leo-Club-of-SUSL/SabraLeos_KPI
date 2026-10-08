@@ -18,6 +18,7 @@ export function LoginScreen() {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
   const lockoutTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isSubmittingRef = useRef(false);
 
   const isLockedOut = lockoutRemaining > 0;
 
@@ -41,7 +42,8 @@ export function LoginScreen() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLockedOut) return;
+    if (isLockedOut || loading || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setError('');
     setLoading(true);
 
@@ -71,6 +73,7 @@ export function LoginScreen() {
       }
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

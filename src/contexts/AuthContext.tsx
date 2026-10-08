@@ -30,17 +30,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const inFlightPromiseRef = useRef<Promise<void> | null>(null);
   const lastUserIdRef = useRef<string | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSigningInRef = useRef<boolean>(false);
+  const lastLoginLogTimeRef = useRef<number>(0);
 
   const signOut = useCallback(async () => {
     try {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-      if (user) {
+
+      // Capture identity before session destruction
+      const currentUser = lastUserIdRef.current || user?.id;
+      const currentUsername = appUser?.username || user?.email?.split('@')[0] || 'Officer';
+
+      // Log LOGOUT before the session token is invalidated
+      if (currentUser) {
         try {
-          await logService.logSecurityEvent('LOGOUT', { user_id: user.id, username: appUser?.username }, user.id);
+          await logService.logLogout(currentUser, currentUsername);
         } catch {
           // non-fatal
         }
       }
+
+      lastLoginLogTimeRef.current = 0;
       systemService.clearStaticCache();
       await supabase.auth.signOut();
     } catch (err) {
@@ -157,43 +167,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadUserContext]);
 
   const signIn = async (email: string, password: string, captchaToken?: string): Promise<void> => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-      options: captchaToken ? { captchaToken } : undefined,
-    });
-
-    if (error || !data.user) {
-      throw new Error('Invalid email or password');
+    // Prevent concurrent duplicate sign-in invocations
+    if (isSigningInRef.current) {
+      return;
     }
+    isSigningInRef.current = true;
 
-    // Validate session context immediately
-    const sessionCtx = await userService.getSessionContext();
-    if (!sessionCtx || !sessionCtx.valid || sessionCtx.status === 'suspended') {
-      await supabase.auth.signOut();
-      throw new Error('Invalid email or password');
-    }
-
-    const userProfile: AppUser = {
-      id: sessionCtx.id ?? data.user.id,
-      username: sessionCtx.username ?? data.user.email?.split('@')[0] ?? 'user',
-      designation: sessionCtx.designation ?? 'Member',
-      role: sessionCtx.role ?? 'member',
-      status: sessionCtx.status ?? 'active',
-      linked_member_reg_no: sessionCtx.linked_member_reg_no ?? null,
-      created_at: sessionCtx.created_at ?? new Date().toISOString(),
-    };
-
-    lastUserIdRef.current = data.user.id;
-    setUser(data.user);
-    setAppUser(userProfile);
-    setLoading(false);
-
-    // Log officer login non-fatally
     try {
-      await logService.logLogin();
-    } catch {
-      // Non-fatal
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+        options: captchaToken ? { captchaToken } : undefined,
+      });
+
+      if (error || !data.user) {
+        throw new Error('Invalid email or password');
+      }
+
+      // Validate session context immediately
+      const sessionCtx = await userService.getSessionContext();
+      if (!sessionCtx || !sessionCtx.valid || sessionCtx.status === 'suspended') {
+        await supabase.auth.signOut();
+        throw new Error('Invalid email or password');
+      }
+
+      const userProfile: AppUser = {
+        id: sessionCtx.id ?? data.user.id,
+        username: sessionCtx.username ?? data.user.email?.split('@')[0] ?? 'user',
+        designation: sessionCtx.designation ?? 'Member',
+        role: sessionCtx.role ?? 'member',
+        status: sessionCtx.status ?? 'active',
+        linked_member_reg_no: sessionCtx.linked_member_reg_no ?? null,
+        created_at: sessionCtx.created_at ?? new Date().toISOString(),
+      };
+
+      lastUserIdRef.current = data.user.id;
+      setUser(data.user);
+      setAppUser(userProfile);
+      setLoading(false);
+
+      // Debounce login logging to prevent duplicates (15-second window)
+      const now = Date.now();
+      if (now - lastLoginLogTimeRef.current > 15000) {
+        lastLoginLogTimeRef.current = now;
+        try {
+          await logService.logLogin();
+        } catch {
+          // Non-fatal
+        }
+      }
+    } finally {
+      isSigningInRef.current = false;
     }
   };
 

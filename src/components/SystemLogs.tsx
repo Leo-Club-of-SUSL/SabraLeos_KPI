@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../lib/supabase';
 import { logService } from '../services/log-service';
 import { 
   Clock, User, FileText, Search, Loader2, ShieldAlert, 
@@ -27,6 +28,7 @@ export interface UnifiedLogEntry {
 export function SystemLogs() {
   const [rawActivityLogs, setRawActivityLogs] = useState<Array<Record<string, unknown>>>([]);
   const [rawSecurityLogs, setRawSecurityLogs] = useState<Array<Record<string, unknown>>>([]);
+  const [userDirectory, setUserDirectory] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -43,12 +45,22 @@ export function SystemLogs() {
     try {
       setLoading(true);
       setError('');
-      const [activity, security] = await Promise.all([
+      const [activity, security, usersRes] = await Promise.all([
         logService.getLogs().catch(() => []),
         logService.getSecurityEvents().catch(() => []),
+        Promise.resolve(supabase.from('app_users').select('id, username')).catch(() => ({ data: [] })),
       ]);
+
+      const dir = new Map<string, string>();
+      if (Array.isArray(usersRes?.data)) {
+        usersRes.data.forEach((u: { id?: string; username?: string }) => {
+          if (u.id && u.username) dir.set(u.id, u.username);
+        });
+      }
+
       setRawActivityLogs(activity as Array<Record<string, unknown>>);
       setRawSecurityLogs(security as Array<Record<string, unknown>>);
+      setUserDirectory(dir);
     } catch (err) {
       console.error('Error loading logs:', err);
       setError('Failed to load system logs');
@@ -63,17 +75,52 @@ export function SystemLogs() {
 
   // Transform raw logs into normalized UnifiedLogEntry list
   const unifiedLogs: UnifiedLogEntry[] = useMemo(() => {
+    // Populate directory also from activity logs that have both user_id and user_name
+    const fullDir = new Map(userDirectory);
+    rawActivityLogs.forEach((item) => {
+      const uid = (item.user_id as string) || null;
+      const uname = (item.user_name as string) || null;
+      if (uid && uname && !fullDir.has(uid)) {
+        fullDir.set(uid, uname);
+      }
+    });
+
+    const resolveActorName = (
+      detailsObj: Record<string, unknown> | null,
+      explicitName?: string | null,
+      actorId?: string | null,
+      userId?: string | null
+    ): string => {
+      const fromDetails = detailsObj?.username || detailsObj?.user_name || detailsObj?.email;
+      if (fromDetails) return String(fromDetails);
+      if (explicitName && explicitName !== 'Security Guardian' && explicitName !== 'Security System') {
+        return String(explicitName);
+      }
+      if (actorId && fullDir.has(actorId)) return fullDir.get(actorId)!;
+      if (userId && fullDir.has(userId)) return fullDir.get(userId)!;
+      if (actorId) return `Officer (${String(actorId).substring(0, 8)})`;
+      if (userId) return `User (${String(userId).substring(0, 8)})`;
+      return 'System Operator';
+    };
+
     const activityItems: UnifiedLogEntry[] = rawActivityLogs.map((item) => {
       const act = String(item.action || 'UNKNOWN');
       let cat: UnifiedLogEntry['category'] = 'other';
       let sev: UnifiedLogEntry['severity'] = 'info';
 
-      if (act.includes('LOGIN')) cat = 'auth';
-      else if (act.includes('MEMBER')) cat = 'member';
-      else if (act.includes('CONTRIBUTION') || act.includes('POINT')) cat = 'points';
-      else if (act.includes('TIER')) cat = 'tier';
-      else if (act.includes('FACULTY') || act.includes('BATCH') || act.includes('AVENUE')) cat = 'system';
-      else if (act.includes('USER') || act.includes('ROLE')) cat = 'access';
+      if (act.includes('LOGIN') || act.includes('LOGOUT') || act.includes('AUTH') || act.includes('SESSION')) {
+        cat = 'auth';
+      } else if (act.includes('MEMBER')) {
+        cat = 'member';
+      } else if (act.includes('CONTRIBUTION') || act.includes('POINT')) {
+        cat = 'points';
+      } else if (act.includes('TIER')) {
+        cat = 'tier';
+      } else if (act.includes('FACULTY') || act.includes('BATCH') || act.includes('AVENUE')) {
+        cat = 'system';
+      } else if (act.includes('USER') || act.includes('ROLE')) {
+        cat = 'access';
+      }
 
       if (act.includes('DELETE') || act.includes('REMOVE')) sev = 'warning';
       if (act.includes('DROP') || act.includes('PURGE')) sev = 'high';
@@ -86,11 +133,18 @@ export function SystemLogs() {
         };
       }
 
+      const actorName = resolveActorName(
+        details,
+        item.user_name as string,
+        item.user_id as string,
+        item.user_id as string
+      );
+
       return {
         id: `act-${item.id || Math.random()}`,
         source: 'activity',
         timestamp: String(item.timestamp || item.created_at || new Date().toISOString()),
-        actor_name: String(item.user_name || (item.user_id ? `User (${String(item.user_id).substring(0, 8)})` : 'System Operator')),
+        actor_name: actorName,
         actor_id: (item.user_id as string) || null,
         action: act,
         category: cat,
@@ -121,11 +175,11 @@ export function SystemLogs() {
       else if (evt.includes('ROLE') || evt.includes('PRIVILEGE') || evt.includes('USER')) cat = 'access';
 
       const detailsObj = (item.details as Record<string, unknown>) || null;
-      const actorNameFromDetails = detailsObj?.username || detailsObj?.user_name || detailsObj?.email;
-      const actorName = String(
-        actorNameFromDetails ||
-        (item.user_name as string) ||
-        (item.actor_id as string ? `Officer (${String(item.actor_id).substring(0, 8)})` : 'Security System')
+      const actorName = resolveActorName(
+        detailsObj,
+        item.user_name as string,
+        item.actor_id as string,
+        item.user_id as string
       );
 
       return {
@@ -133,7 +187,7 @@ export function SystemLogs() {
         source: 'security',
         timestamp: String(item.created_at || (item as any).timestamp || new Date().toISOString()),
         actor_name: actorName,
-        actor_id: (item.actor_id as string) || null,
+        actor_id: (item.actor_id as string) || (item.user_id as string) || null,
         action: evt,
         category: cat,
         severity: sev,
@@ -145,10 +199,25 @@ export function SystemLogs() {
     });
 
     // Merge and sort desc by timestamp
-    return [...activityItems, ...securityItems].sort((a, b) => 
+    const mergedSorted = [...activityItems, ...securityItems].sort((a, b) => 
       new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
-  }, [rawActivityLogs, rawSecurityLogs]);
+
+    // Deduplicate rapid consecutive duplicate entries (same source, action, actor within 3s window)
+    const deduped: UnifiedLogEntry[] = [];
+    const seenKeys = new Set<string>();
+
+    for (const entry of mergedSorted) {
+      const timeBucket = Math.floor(new Date(entry.timestamp).getTime() / 3000);
+      const dedupeKey = `${entry.source}|${entry.action}|${entry.actor_name}|${entry.entity_id || ''}|${timeBucket}`;
+      if (!seenKeys.has(dedupeKey)) {
+        seenKeys.add(dedupeKey);
+        deduped.push(entry);
+      }
+    }
+
+    return deduped;
+  }, [rawActivityLogs, rawSecurityLogs, userDirectory]);
 
   // Apply active stream tab, search, severity, and time filters
   const filteredLogs = useMemo(() => {
