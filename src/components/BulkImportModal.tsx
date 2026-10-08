@@ -1,18 +1,87 @@
-import { useState, useRef } from 'react';
-import { X, Download, Upload, AlertCircle, CheckCircle, FileSpreadsheet } from 'lucide-react';
-import { bulkImportService, type ImportResult } from '../services/bulk-import-service';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import {
+  X,
+  Download,
+  Upload,
+  AlertCircle,
+  CheckCircle,
+  FileSpreadsheet,
+  Trash2,
+  Search,
+  AlertTriangle,
+  ArrowLeft,
+  Loader2,
+  Check,
+  KeyRound,
+  Mail,
+  UserCheck,
+} from 'lucide-react';
+import {
+  bulkImportService,
+  generateDefaultPassword,
+  type ImportResult,
+  type StagedMemberRow,
+} from '../services/bulk-import-service';
+import { systemService } from '../services/system-service';
+import type { Faculty, Batch as BatchType } from '../types/database';
 
 interface BulkImportModalProps {
   onClose: () => void;
   onSuccess: () => void;
 }
 
+type ModalStep = 'SELECT_FILE' | 'REVIEW_STAGED' | 'IMPORTING' | 'COMPLETE';
+type FilterTab = 'all' | 'valid' | 'errors';
+
 export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
+  const [step, setStep] = useState<ModalStep>('SELECT_FILE');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  // Metadata for faculty and batch dropdown selections
+  const [faculties, setFaculties] = useState<Faculty[]>([]);
+  const [batches, setBatches] = useState<BatchType[]>([]);
+  const [existingInDb, setExistingInDb] = useState<Set<string>>(new Set());
+
+  // Staged rows & review state
+  const [stagedRows, setStagedRows] = useState<StagedMemberRow[]>([]);
+  const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [createPortalAccounts, setCreatePortalAccounts] = useState(true);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [showSkipConfirm, setShowSkipConfirm] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Load system faculties and batches on mount
+  useEffect(() => {
+    const loadSystemData = async () => {
+      try {
+        const [fList, bList] = await Promise.all([
+          systemService.getFaculties(),
+          systemService.getBatches(),
+        ]);
+        setFaculties(fList);
+        setBatches(bList);
+      } catch (err) {
+        console.error('Failed to load system taxonomy for bulk import:', err);
+      }
+    };
+    loadSystemData();
+  }, []);
+
+  const validFacultyNames = useMemo(
+    () => new Set(faculties.map((f) => f.name.toLowerCase().trim())),
+    [faculties]
+  );
+
+  const validBatchNames = useMemo(
+    () => new Set(batches.map((b) => b.name.toLowerCase().trim())),
+    [batches]
+  );
+
+  // Download template with live faculties and batches reference sheet
   const handleDownloadTemplate = async () => {
     try {
       await bulkImportService.downloadTemplate();
@@ -21,269 +90,1010 @@ export function BulkImportModal({ onClose, onSuccess }: BulkImportModalProps) {
     }
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle file selection and initiate parsing & staging
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      // Validate file type
-      const validTypes = [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
-      ];
+    if (!file) return;
 
-      if (!validTypes.includes(file.type) && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-        alert('Please select a valid Excel file (.xlsx or .xls)');
-        return;
+    // Validate file type
+    const validExtensions = ['.xlsx', '.xls'];
+    const hasValidExt = validExtensions.some((ext) => file.name.toLowerCase().endsWith(ext));
+
+    if (!hasValidExt) {
+      alert('Please select a valid Excel file (.xlsx or .xls)');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setSelectedFile(file);
+    setParseError(null);
+    setParsing(true);
+
+    try {
+      // 1. Ensure latest system taxonomies are loaded
+      let currentFaculties = faculties;
+      let currentBatches = batches;
+      if (currentFaculties.length === 0 || currentBatches.length === 0) {
+        const [fList, bList] = await Promise.all([
+          systemService.getFaculties(),
+          systemService.getBatches(),
+        ]);
+        currentFaculties = fList;
+        currentBatches = bList;
+        setFaculties(fList);
+        setBatches(bList);
       }
 
-      setSelectedFile(file);
-      setImportResult(null);
+      // 2. Parse Excel file into normalized rows
+      const rawRows = await bulkImportService.parseExcelFile(file);
+      if (rawRows.length === 0) {
+        throw new Error('The uploaded Excel file contains no data rows. Please add member data and try again.');
+      }
+
+      // 3. Stage and validate all rows against DB and schema
+      const { stagedRows: staged, existingInDb: dbSet } = await bulkImportService.stageAndValidateRows(
+        rawRows,
+        currentFaculties,
+        currentBatches
+      );
+
+      setExistingInDb(dbSet);
+      setStagedRows(staged);
+      setStep('REVIEW_STAGED');
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : 'Failed to parse Excel file');
+      setSelectedFile(null);
+    } finally {
+      setParsing(false);
     }
   };
 
-  const handleImport = async () => {
-    if (!selectedFile) return;
+  // Re-validate staged rows helper
+  const revalidate = (updatedRows: StagedMemberRow[]) => {
+    return bulkImportService.revalidateStagedRows(
+      updatedRows,
+      validFacultyNames,
+      validBatchNames,
+      existingInDb
+    );
+  };
 
-    setImporting(true);
-    setImportResult(null);
+  // Handle cell edit in the staging table
+  const handleFieldChange = (
+    id: string,
+    field: keyof Omit<StagedMemberRow, 'id' | 'rowNumber' | 'isValid' | 'errors' | 'isDuplicateInFile' | 'existsInDb'>,
+    value: string
+  ) => {
+    setStagedRows((prev) => {
+      const updated = prev.map((row) => {
+        if (row.id !== id) return row;
+        let formattedValue = value;
+        let updatedPassword = row.password;
 
+        if (field === 'reg_no') {
+          formattedValue = value.toUpperCase();
+          // If password was using default pattern, update suggested password with new reg_no
+          if (!row.password || row.password.startsWith('Leo@')) {
+            updatedPassword = generateDefaultPassword(formattedValue);
+          }
+        }
+
+        return {
+          ...row,
+          [field]: formattedValue,
+          password: updatedPassword,
+        };
+      });
+      return revalidate(updated);
+    });
+  };
+
+  // Remove individual staged row
+  const handleDeleteRow = (id: string) => {
+    setStagedRows((prev) => {
+      const filtered = prev.filter((r) => r.id !== id);
+      return revalidate(filtered);
+    });
+  };
+
+  // Discard all rows that have errors
+  const handleDiscardAllErrors = () => {
+    if (!confirm('Are you sure you want to remove all rows with errors?')) return;
+    setStagedRows((prev) => {
+      const validOnly = prev.filter((r) => r.isValid);
+      return revalidate(validOnly);
+    });
+    setFilterTab('all');
+  };
+
+  // Count summaries
+  const totalCount = stagedRows.length;
+  const validCount = stagedRows.filter((r) => r.isValid).length;
+  const errorCount = stagedRows.filter((r) => !r.isValid).length;
+  const emailCount = stagedRows.filter((r) => r.email && r.email.includes('@')).length;
+
+  // Filtered rows for the view
+  const displayedRows = useMemo(() => {
+    let list = stagedRows;
+
+    if (filterTab === 'valid') {
+      list = list.filter((r) => r.isValid);
+    } else if (filterTab === 'errors') {
+      list = list.filter((r) => !r.isValid);
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (r) =>
+          r.reg_no.toLowerCase().includes(query) ||
+          r.full_name.toLowerCase().includes(query) ||
+          r.name_with_initials.toLowerCase().includes(query) ||
+          r.faculty.toLowerCase().includes(query) ||
+          r.batch.toLowerCase().includes(query) ||
+          r.whatsapp.toLowerCase().includes(query) ||
+          r.email.toLowerCase().includes(query)
+      );
+    }
+
+    return list;
+  }, [stagedRows, filterTab, searchQuery]);
+
+  // Execute import
+  const executeImport = async () => {
+    setShowSkipConfirm(false);
+    const validRowsToImport = stagedRows.filter((r) => r.isValid);
+    if (validRowsToImport.length === 0) return;
+
+    setStep('IMPORTING');
     try {
-      // Parse the Excel file
-      const rows = await bulkImportService.parseExcelFile(selectedFile);
-
-      if (rows.length === 0) {
-        alert('The Excel file is empty. Please add member data and try again.');
-        setImporting(false);
-        return;
-      }
-
-      // Import the members
-      const result = await bulkImportService.importMembers(rows);
+      const result = await bulkImportService.importMembers(validRowsToImport, {
+        provisionAccounts: createPortalAccounts,
+      });
       setImportResult(result);
-
+      setStep('COMPLETE');
       if (result.success > 0) {
         onSuccess();
       }
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to import members');
-    } finally {
-      setImporting(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'An error occurred during import');
+      setStep('REVIEW_STAGED');
     }
   };
 
-  const handleReset = () => {
+  const handleStartImport = () => {
+    if (validCount === 0) {
+      alert('There are no valid members to import. Please resolve the errors or add valid data.');
+      return;
+    }
+
+    if (errorCount > 0) {
+      setShowSkipConfirm(true);
+    } else {
+      executeImport();
+    }
+  };
+
+  const handleResetToUpload = () => {
     setSelectedFile(null);
+    setStagedRows([]);
+    setParseError(null);
     setImportResult(null);
+    setFilterTab('all');
+    setSearchQuery('');
+    setStep('SELECT_FILE');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 z-50 animate-in fade-in duration-200">
+      <div
+        className={`bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full flex flex-col transition-all duration-300 max-h-[95vh] ${
+          step === 'REVIEW_STAGED' ? 'max-w-[96vw]' : 'max-w-3xl'
+        }`}
+      >
         {/* Header */}
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Bulk Import Members
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Import multiple members at once using an Excel file
-            </p>
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+          <div className="flex items-center gap-3">
+            {step === 'REVIEW_STAGED' && (
+              <button
+                onClick={handleResetToUpload}
+                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
+                title="Back to file selection"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <FileSpreadsheet className="w-6 h-6 text-maroon-600 dark:text-maroon-400" />
+                {step === 'REVIEW_STAGED'
+                  ? 'Review & Verify Member Data'
+                  : step === 'IMPORTING'
+                  ? 'Importing Members...'
+                  : step === 'COMPLETE'
+                  ? 'Import Results'
+                  : 'Bulk Import Members'}
+              </h2>
+              <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                {step === 'REVIEW_STAGED'
+                  ? `Extracted from ${selectedFile?.name}. Review emails, passwords, and details directly before adding.`
+                  : step === 'IMPORTING'
+                  ? 'Batching and inserting verified records and provisioning member portal logins...'
+                  : step === 'COMPLETE'
+                  ? 'Review the import outcome below.'
+                  : 'Onboard multiple Leo members at once using an Excel template with live Faculty & Batch options.'}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
           >
-            <X className="w-6 h-6 text-gray-600 dark:text-gray-400" />
+            <X className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Step 1: Download Template */}
-          <div className="bg-gradient-to-r from-maroon-50 to-maroon-100 dark:from-maroon-900/20 dark:to-maroon-800/20 rounded-lg p-6 border border-maroon-200 dark:border-maroon-700">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-maroon-600 text-white rounded-full flex items-center justify-center font-bold text-lg">
-                1
+        {/* Modal Body */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+          {/* STEP 1: SELECT FILE */}
+          {step === 'SELECT_FILE' && (
+            <div className="space-y-6">
+              {/* Step 1: Download Template */}
+              <div className="bg-gradient-to-r from-maroon-50 to-maroon-100 dark:from-maroon-900/20 dark:to-maroon-800/20 rounded-xl p-6 border border-maroon-200 dark:border-maroon-700 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 bg-maroon-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow-sm">
+                    1
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                      Download Official Excel Template
+                    </h3>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+                      Includes pre-configured columns (including <strong>Email</strong> and <strong>Password</strong>) and a dedicated <strong>Valid_Selections</strong> sheet populated with all active <strong>Faculties</strong> and <strong>Batches</strong>.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        onClick={handleDownloadTemplate}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors shadow-sm hover:shadow"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Template (.xlsx)
+                      </button>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 bg-white/70 dark:bg-gray-800/70 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700">
+                        {faculties.length} Faculties • {batches.length} Batches Included
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Download Template
-                </h3>
-                <p className="text-gray-700 dark:text-gray-300 mb-4">
-                  Download the Excel template file and fill it with member information. The template includes sample data to guide you.
-                </p>
-                <button
-                  onClick={handleDownloadTemplate}
-                  className="flex items-center gap-2 px-4 py-2 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg font-medium transition-colors duration-200"
-                >
-                  <Download className="w-5 h-5" />
-                  Download Template
-                </button>
-              </div>
-            </div>
-          </div>
 
-          {/* Step 2: Upload File */}
-          <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-6 border border-blue-200 dark:border-blue-700">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-lg">
-                2
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  Upload Filled Template
-                </h3>
-                <p className="text-gray-700 dark:text-gray-300 mb-4">
-                  After filling the template with member data, upload it here to import the members.
-                </p>
+              {/* Step 2: Upload File */}
+              <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-6 border border-blue-200 dark:border-blue-700 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow-sm">
+                    2
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                      Upload Filled Excel Sheet
+                    </h3>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                      Upload your populated spreadsheet. The system will parse the records and present an <strong>interactive verification screen</strong> where you can edit names, emails, passwords, and faculties directly before saving.
+                    </p>
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  id="excel-file-input"
-                />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      id="excel-file-upload-input"
+                    />
 
-                <div className="space-y-3">
-                  {selectedFile ? (
-                    <div className="flex items-center gap-3 p-4 bg-white dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600">
-                      <FileSpreadsheet className="w-8 h-8 text-green-600 dark:text-green-400" />
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900 dark:text-white">{selectedFile.name}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {(selectedFile.size / 1024).toFixed(2)} KB
+                    {parsing ? (
+                      <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-gray-800 rounded-xl border border-blue-300 dark:border-blue-700">
+                        <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-3" />
+                        <p className="font-semibold text-gray-900 dark:text-white">
+                          Extracting & Validating Records...
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Checking for existing members and verifying emails, passwords, and faculties
                         </p>
                       </div>
-                      <button
-                        onClick={handleReset}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors duration-200"
+                    ) : (
+                      <label
+                        htmlFor="excel-file-upload-input"
+                        className="flex flex-col items-center justify-center gap-3 p-8 bg-white dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-all text-center group"
                       >
-                        <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label
-                      htmlFor="excel-file-input"
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 transition-colors duration-200"
-                    >
-                      <Upload className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">
-                        Choose Excel File
-                      </span>
-                    </label>
-                  )}
+                        <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <Upload className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <span className="text-base font-semibold text-gray-800 dark:text-gray-200 block">
+                            Click to browse or drag and drop Excel file
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 block">
+                            Supports .xlsx and .xls formats
+                          </span>
+                        </div>
+                      </label>
+                    )}
 
-                  {selectedFile && !importResult && (
+                    {parseError && (
+                      <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+                            Failed to read Excel file
+                          </p>
+                          <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
+                            {parseError}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Guidelines */}
+              <div className="bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                  Helpful Import Tips:
+                </h4>
+                <ul className="text-xs text-gray-600 dark:text-gray-300 space-y-1.5 list-disc list-inside">
+                  <li>Registration number, Full name, Name with initials, Batch, Faculty, and WhatsApp are required.</li>
+                  <li><strong>Email & Password</strong>: Enter an email to automatically create a Member Portal login account. If password is left blank, it defaults to <code>Leo@&lt;RegNo&gt;2026!</code>.</li>
+                  <li>WhatsApp numbers are automatically standardized (e.g. <code>0771234567</code> becomes <code>+94771234567</code>).</li>
+                  <li>Any duplicate registration numbers or typos can be edited directly on the next screen before importing.</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: REVIEW & EDIT STAGED DATA */}
+          {step === 'REVIEW_STAGED' && (
+            <div className="space-y-4">
+              {/* Summary Stats Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wider block">
+                      Total Extracted
+                    </span>
+                    <span className="text-2xl font-black text-blue-900 dark:text-blue-100">
+                      {totalCount}
+                    </span>
+                  </div>
+                  <FileSpreadsheet className="w-8 h-8 text-blue-500 opacity-60" />
+                </div>
+
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider block">
+                      Ready to Add
+                    </span>
+                    <span className="text-2xl font-black text-emerald-900 dark:text-emerald-100">
+                      {validCount}
+                    </span>
+                  </div>
+                  <CheckCircle className="w-8 h-8 text-emerald-500 opacity-60" />
+                </div>
+
+                <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-rose-700 dark:text-rose-300 uppercase tracking-wider block">
+                      Needs Attention
+                    </span>
+                    <span className="text-2xl font-black text-rose-900 dark:text-rose-100">
+                      {errorCount}
+                    </span>
+                  </div>
+                  <AlertCircle className="w-8 h-8 text-rose-500 opacity-60" />
+                </div>
+
+                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wider block">
+                      With Portal Email
+                    </span>
+                    <span className="text-2xl font-black text-purple-900 dark:text-purple-100">
+                      {emailCount}
+                    </span>
+                  </div>
+                  <UserCheck className="w-8 h-8 text-purple-500 opacity-60" />
+                </div>
+              </div>
+
+              {/* Status Banner */}
+              {errorCount > 0 ? (
+                <div className="p-3.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl flex items-center justify-between text-amber-800 dark:text-amber-200 text-sm">
+                  <div className="flex items-center gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                    <span>
+                      <strong>{errorCount} {errorCount === 1 ? 'row has issues' : 'rows have issues'}.</strong> Review the highlighted fields below, use the dropdowns to correct them, or delete rows you do not want to import.
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleDiscardAllErrors}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 hover:bg-rose-200 dark:hover:bg-rose-900/60 rounded-lg transition-colors flex-shrink-0 ml-3"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Discard All Errors ({errorCount})
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2.5 text-emerald-800 dark:text-emerald-200 text-sm">
+                  <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                  <span>
+                    <strong>All {totalCount} records are verified and valid.</strong> Ready to be imported directly into Nexus KPI.
+                  </span>
+                </div>
+              )}
+
+              {/* Toolbar & Filter Tabs */}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-1">
+                {/* Tabs */}
+                <div className="flex items-center gap-3">
+                  <div className="flex bg-gray-100 dark:bg-gray-700/60 p-1 rounded-xl">
                     <button
-                      onClick={handleImport}
-                      disabled={importing}
-                      className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium transition-colors duration-200"
+                      onClick={() => setFilterTab('all')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        filterTab === 'all'
+                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      }`}
                     >
-                      {importing ? (
-                        <>
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                          Importing...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-5 h-5" />
-                          Import Members
-                        </>
-                      )}
+                      All Records ({totalCount})
+                    </button>
+                    <button
+                      onClick={() => setFilterTab('valid')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        filterTab === 'valid'
+                          ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400'
+                      }`}
+                    >
+                      Ready ({validCount})
+                    </button>
+                    <button
+                      onClick={() => setFilterTab('errors')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        filterTab === 'errors'
+                          ? 'bg-white dark:bg-gray-800 text-rose-600 dark:text-rose-400 shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-rose-600 dark:hover:text-rose-400'
+                      }`}
+                    >
+                      Issues ({errorCount})
+                    </button>
+                  </div>
+
+                  {/* Provision Accounts Toggle */}
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/40 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={createPortalAccounts}
+                      onChange={(e) => setCreatePortalAccounts(e.target.checked)}
+                      className="w-4 h-4 text-maroon-600 rounded border-gray-300 dark:border-gray-600 focus:ring-maroon-500"
+                    />
+                    <KeyRound className="w-3.5 h-3.5 text-maroon-600 dark:text-maroon-400" />
+                    <span>Auto-create Member Portal logins for members with email</span>
+                  </label>
+                </div>
+
+                {/* Search */}
+                <div className="relative flex-1 lg:max-w-xs">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by name, reg, email, faculty..."
+                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-maroon-500 focus:outline-none"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
               </div>
+
+              {/* Editable Staging Table */}
+              <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm bg-white dark:bg-gray-800">
+                <div className="overflow-x-auto max-h-[50vh]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-gray-50 dark:bg-gray-700/80 text-gray-600 dark:text-gray-300 font-semibold sticky top-0 z-10 border-b border-gray-200 dark:border-gray-700 backdrop-blur">
+                      <tr>
+                        <th className="py-2.5 px-3 w-16 text-center">Status</th>
+                        <th className="py-2.5 px-2 w-12 text-center">Row</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Reg No *</th>
+                        <th className="py-2.5 px-3 min-w-[150px]">Full Name *</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Name with Initials *</th>
+                        <th className="py-2.5 px-3 min-w-[170px]">Faculty *</th>
+                        <th className="py-2.5 px-3 min-w-[120px]">Batch *</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">WhatsApp *</th>
+                        <th className="py-2.5 px-3 min-w-[160px]">Email (Portal Login)</th>
+                        <th className="py-2.5 px-3 min-w-[150px]">Password</th>
+                        <th className="py-2.5 px-3 min-w-[100px]">MyLCI No</th>
+                        <th className="py-2.5 px-2 w-12 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700/60">
+                      {displayedRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={12} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                            No records match the current filter.
+                          </td>
+                        </tr>
+                      ) : (
+                        displayedRows.map((row) => {
+                          const hasRegError = row.errors.some((e) => e.toLowerCase().includes('registration'));
+                          const hasNameError = row.errors.some((e) => e.toLowerCase().includes('full name'));
+                          const hasInitialsError = row.errors.some((e) => e.toLowerCase().includes('initials'));
+                          const hasFacultyError = row.errors.some((e) => e.toLowerCase().includes('faculty'));
+                          const hasBatchError = row.errors.some((e) => e.toLowerCase().includes('batch'));
+                          const hasPhoneError = row.errors.some((e) => e.toLowerCase().includes('whatsapp') || e.toLowerCase().includes('phone'));
+                          const hasEmailError = row.errors.some((e) => e.toLowerCase().includes('email'));
+                          const hasPasswordError = row.errors.some((e) => e.toLowerCase().includes('password'));
+
+                          return (
+                            <tr
+                              key={row.id}
+                              className={`transition-colors ${
+                                row.isValid
+                                  ? 'hover:bg-gray-50/80 dark:hover:bg-gray-700/40'
+                                  : 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50/70 dark:hover:bg-rose-950/30'
+                              }`}
+                            >
+                              {/* Status Badge */}
+                              <td className="py-2 px-3 text-center align-top">
+                                {row.isValid ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                    title="Verified: Ready to import"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                    Ready
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300 cursor-help"
+                                    title={row.errors.join(' • ')}
+                                  >
+                                    <AlertCircle className="w-3 h-3" />
+                                    Issue
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Row Number */}
+                              <td className="py-2 px-2 text-center text-gray-500 dark:text-gray-400 font-mono text-[11px] align-top pt-2.5">
+                                #{row.rowNumber}
+                              </td>
+
+                              {/* Registration Number */}
+                              <td className="py-2 px-3 align-top">
+                                <input
+                                  type="text"
+                                  value={row.reg_no}
+                                  onChange={(e) => handleFieldChange(row.id, 'reg_no', e.target.value)}
+                                  placeholder="e.g. 22ABC1234"
+                                  className={`w-full px-2.5 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border font-mono uppercase focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                    hasRegError
+                                      ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                      : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                  }`}
+                                />
+                                {hasRegError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    {row.errors.find((e) => e.toLowerCase().includes('registration'))}
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* Full Name */}
+                              <td className="py-2 px-3 align-top">
+                                <input
+                                  type="text"
+                                  value={row.full_name}
+                                  onChange={(e) => handleFieldChange(row.id, 'full_name', e.target.value)}
+                                  placeholder="Full Name"
+                                  className={`w-full px-2.5 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                    hasNameError
+                                      ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                      : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                  }`}
+                                />
+                                {hasNameError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Full name required
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* Name with Initials */}
+                              <td className="py-2 px-3 align-top">
+                                <input
+                                  type="text"
+                                  value={row.name_with_initials}
+                                  onChange={(e) => handleFieldChange(row.id, 'name_with_initials', e.target.value)}
+                                  placeholder="e.g. J.D. Smith"
+                                  className={`w-full px-2.5 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                    hasInitialsError
+                                      ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                      : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                  }`}
+                                />
+                                {hasInitialsError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Initials required
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* Faculty (Dropdown Selection) */}
+                              <td className="py-2 px-3 align-top">
+                                <select
+                                  value={
+                                    faculties.some(
+                                      (f) => f.name.toLowerCase().trim() === row.faculty.toLowerCase().trim()
+                                    )
+                                      ? faculties.find(
+                                          (f) => f.name.toLowerCase().trim() === row.faculty.toLowerCase().trim()
+                                        )?.name
+                                      : ''
+                                  }
+                                  onChange={(e) => handleFieldChange(row.id, 'faculty', e.target.value)}
+                                  className={`w-full px-2 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                    hasFacultyError
+                                      ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/40 font-semibold'
+                                      : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                  }`}
+                                >
+                                  {!faculties.some(
+                                    (f) => f.name.toLowerCase().trim() === row.faculty.toLowerCase().trim()
+                                  ) && (
+                                    <option value="" disabled>
+                                      {row.faculty ? `⚠️ Invalid: "${row.faculty}" (Select below)` : '-- Select Faculty --'}
+                                    </option>
+                                  )}
+                                  {faculties.map((f) => (
+                                    <option key={f.id} value={f.name}>
+                                      {f.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                {hasFacultyError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Please select an active faculty
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* Batch (Dropdown Selection) */}
+                              <td className="py-2 px-3 align-top">
+                                <select
+                                  value={
+                                    batches.some(
+                                      (b) => b.name.toLowerCase().trim() === row.batch.toLowerCase().trim()
+                                    )
+                                      ? batches.find(
+                                          (b) => b.name.toLowerCase().trim() === row.batch.toLowerCase().trim()
+                                        )?.name
+                                      : ''
+                                  }
+                                  onChange={(e) => handleFieldChange(row.id, 'batch', e.target.value)}
+                                  className={`w-full px-2 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                    hasBatchError
+                                      ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/40 font-semibold'
+                                      : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                  }`}
+                                >
+                                  {!batches.some(
+                                    (b) => b.name.toLowerCase().trim() === row.batch.toLowerCase().trim()
+                                  ) && (
+                                    <option value="" disabled>
+                                      {row.batch ? `⚠️ Invalid: "${row.batch}" (Select below)` : '-- Select Batch --'}
+                                    </option>
+                                  )}
+                                  {batches.map((b) => (
+                                    <option key={b.id} value={b.name}>
+                                      {b.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                {hasBatchError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Please select an active batch
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* WhatsApp */}
+                              <td className="py-2 px-3 align-top">
+                                <input
+                                  type="text"
+                                  value={row.whatsapp}
+                                  onChange={(e) => handleFieldChange(row.id, 'whatsapp', e.target.value)}
+                                  placeholder="+94771234567"
+                                  className={`w-full px-2.5 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border font-mono focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                    hasPhoneError
+                                      ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                      : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                  }`}
+                                />
+                                {hasPhoneError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Valid phone required
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* Email (Portal Login) */}
+                              <td className="py-2 px-3 align-top">
+                                <div className="relative">
+                                  <input
+                                    type="email"
+                                    value={row.email}
+                                    onChange={(e) => handleFieldChange(row.id, 'email', e.target.value)}
+                                    placeholder="member@email.com"
+                                    className={`w-full pl-6 pr-2 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                      hasEmailError
+                                        ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                        : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                    }`}
+                                  />
+                                  <Mail className="w-3.5 h-3.5 text-gray-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
+                                {hasEmailError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Invalid email format
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* Password */}
+                              <td className="py-2 px-3 align-top">
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    value={row.password}
+                                    onChange={(e) => handleFieldChange(row.id, 'password', e.target.value)}
+                                    placeholder="Leo@RegNo2026!"
+                                    className={`w-full pl-6 pr-2 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border font-mono focus:ring-1 focus:ring-maroon-500 focus:outline-none ${
+                                      hasPasswordError
+                                        ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/30'
+                                        : 'border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white'
+                                    }`}
+                                  />
+                                  <KeyRound className="w-3.5 h-3.5 text-gray-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
+                                {hasPasswordError && (
+                                  <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 leading-tight">
+                                    Min 6 characters
+                                  </p>
+                                )}
+                              </td>
+
+                              {/* MyLCI Number */}
+                              <td className="py-2 px-3 align-top">
+                                <input
+                                  type="text"
+                                  value={row.my_lci_num}
+                                  onChange={(e) => handleFieldChange(row.id, 'my_lci_num', e.target.value)}
+                                  placeholder="(Optional)"
+                                  className="w-full px-2.5 py-1 text-xs rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:ring-1 focus:ring-maroon-500 focus:outline-none font-mono"
+                                />
+                              </td>
+
+                              {/* Delete Row Button */}
+                              <td className="py-2 px-2 text-center align-top pt-2">
+                                <button
+                                  onClick={() => handleDeleteRow(row.id)}
+                                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                  title="Discard this row"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Import Results */}
-          {importResult && (
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-600">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Import Results
-              </h3>
+          {/* STEP 3: IMPORTING SPINNER */}
+          {step === 'IMPORTING' && (
+            <div className="py-16 flex flex-col items-center justify-center text-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-maroon-50 dark:bg-maroon-900/30 border border-maroon-200 dark:border-maroon-700 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-maroon-600 dark:text-maroon-400 animate-spin" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Importing Members into Nexus KPI
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                  Adding verified member records and provisioning portal login accounts...
+                </p>
+              </div>
+            </div>
+          )}
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                    <span className="text-sm font-medium text-green-800 dark:text-green-300">
-                      Successful
-                    </span>
-                  </div>
-                  <p className="text-3xl font-bold text-green-600 dark:text-green-400">
+          {/* STEP 4: IMPORT COMPLETE */}
+          {step === 'COMPLETE' && importResult && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 text-center">
+                  <CheckCircle className="w-8 h-8 text-emerald-600 dark:text-emerald-400 mx-auto mb-2" />
+                  <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider block">
+                    Members Added
+                  </span>
+                  <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1 block">
                     {importResult.success}
-                  </p>
+                  </span>
                 </div>
 
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                    <span className="text-sm font-medium text-red-800 dark:text-red-300">
-                      Failed
-                    </span>
-                  </div>
-                  <p className="text-3xl font-bold text-red-600 dark:text-red-400">
+                <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-5 text-center">
+                  <UserCheck className="w-8 h-8 text-purple-600 dark:text-purple-400 mx-auto mb-2" />
+                  <span className="text-xs font-semibold text-purple-800 dark:text-purple-300 uppercase tracking-wider block">
+                    Portal Accounts Created
+                  </span>
+                  <span className="text-3xl font-black text-purple-600 dark:text-purple-400 mt-1 block">
+                    {importResult.provisionedAccounts || 0}
+                  </span>
+                </div>
+
+                <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl p-5 text-center">
+                  <AlertCircle className="w-8 h-8 text-rose-600 dark:text-rose-400 mx-auto mb-2" />
+                  <span className="text-xs font-semibold text-rose-800 dark:text-rose-300 uppercase tracking-wider block">
+                    Failed Records
+                  </span>
+                  <span className="text-3xl font-black text-rose-600 dark:text-rose-400 mt-1 block">
                     {importResult.failed}
-                  </p>
+                  </span>
                 </div>
               </div>
 
               {importResult.errors.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-gray-900 dark:text-white">
-                    Errors ({importResult.errors.length}):
+                <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800 rounded-xl p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-rose-900 dark:text-rose-200">
+                    Failed Row Errors ({importResult.errors.length}):
                   </h4>
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {importResult.errors.map((error, index) => (
-                      <div
-                        key={index}
-                        className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
-                      >
-                        <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                          Row {error.row}: {error.error}
-                        </p>
-                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                        {(error.data as any) && (
-                          <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                            {JSON.stringify(error.data)}
-                          </p>
-                        )}
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 text-xs text-rose-800 dark:text-rose-300">
+                    {importResult.errors.map((err, i) => (
+                      <div key={i} className="p-2 bg-white dark:bg-gray-800 rounded border border-rose-200 dark:border-rose-900/40">
+                        <strong>Row {err.row}:</strong> {err.error}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
+              {importResult.provisionErrors && importResult.provisionErrors.length > 0 && (
+                <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Portal Account Warnings ({importResult.provisionErrors.length}):
+                  </h4>
+                  <div className="max-h-36 overflow-y-auto space-y-1 text-xs text-amber-800 dark:text-amber-300">
+                    {importResult.provisionErrors.map((err, i) => (
+                      <div key={i}>
+                        • Member {err.reg_no}: {err.error}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="bg-gray-50 dark:bg-gray-700/60 border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 rounded-b-2xl">
+          {step === 'SELECT_FILE' && (
+            <div className="w-full flex justify-end gap-3">
               <button
-                onClick={handleReset}
-                className="mt-4 w-full px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors duration-200"
+                onClick={onClose}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
               >
-                Import Another File
+                Cancel
               </button>
             </div>
           )}
 
-          {/* Instructions */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">
-              Important Notes:
-            </h4>
-            <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside">
-              <li>All fields except MyLCI Number are required</li>
-              <li>Registration numbers must be unique</li>
-              <li>The system will skip rows with duplicate registration numbers</li>
-              <li>Make sure to follow the template format exactly</li>
-              <li>Remove the sample data rows before importing your actual data</li>
-            </ul>
-          </div>
+          {step === 'REVIEW_STAGED' && (
+            <>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                <span>
+                  Ready to add: <strong className="text-emerald-600 dark:text-emerald-400">{validCount}</strong> of <strong>{totalCount}</strong> records
+                </span>
+                {errorCount > 0 && (
+                  <span className="text-rose-500 ml-2">
+                    ({errorCount} will be skipped unless fixed)
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <button
+                  onClick={handleResetToUpload}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Choose Different File
+                </button>
+                <button
+                  onClick={handleStartImport}
+                  disabled={validCount === 0}
+                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white rounded-lg text-sm font-bold shadow-md hover:shadow transition-all disabled:cursor-not-allowed"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Import {validCount} {validCount === 1 ? 'Member' : 'Members'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === 'COMPLETE' && (
+            <div className="w-full flex justify-end gap-3">
+              <button
+                onClick={handleResetToUpload}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                Import Another File
+              </button>
+              <button
+                onClick={onClose}
+                className="px-6 py-2 bg-maroon-600 hover:bg-maroon-700 text-white rounded-lg text-sm font-bold shadow-md transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Confirmation Dialog for Skipping Erroneous Rows */}
+      {showSkipConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-60 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="w-7 h-7" />
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                Proceed with Import?
+              </h3>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+              There {errorCount === 1 ? 'is' : 'are'} <strong>{errorCount} {errorCount === 1 ? 'row' : 'rows'} with unresolved issues</strong> in your upload.
+              If you proceed now, only the <strong>{validCount} valid {validCount === 1 ? 'member' : 'members'}</strong> will be imported, and problematic rows will be skipped.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowSkipConfirm(false)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                Go Back & Fix
+              </button>
+              <button
+                onClick={executeImport}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold shadow-md transition-colors"
+              >
+                Yes, Import {validCount} Members
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

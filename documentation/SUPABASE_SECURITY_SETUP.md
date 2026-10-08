@@ -1,67 +1,163 @@
-# Supabase Security Setup
+# Supabase Security & Hardening Setup
 
-Run these SQL blocks in Supabase SQL Editor before going live.
+This document specifies the fail-closed security configuration, Row Level Security (RLS) policies, and environment configurations for production deployment.
 
-## Enable RLS
-ALTER TABLE public.members       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.contributions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.app_users     ENABLE ROW LEVEL SECURITY;
+---
 
-## Helper: get current user role
-CREATE OR REPLACE FUNCTION public.get_my_role()
-RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER AS $$
-  SELECT role::text FROM public.app_users WHERE id = auth.uid();
+## 1. Fail-Closed Role Helper Functions
+
+To avoid recursive lookups and guarantee fail-closed security, execute these functions in the Supabase SQL Editor:
+
+```sql
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.app_users
+    WHERE id = auth.uid() AND role = 'super_admin' AND status = 'active'
+  );
 $$;
 
-## members policies
-CREATE POLICY "members_select" ON public.members FOR SELECT TO authenticated USING (true);
-CREATE POLICY "members_insert" ON public.members FOR INSERT TO authenticated WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
-CREATE POLICY "members_update" ON public.members FOR UPDATE TO authenticated USING (public.get_my_role() IN ('super_admin','editor')) WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
-CREATE POLICY "members_delete" ON public.members FOR DELETE TO authenticated USING (public.get_my_role() = 'super_admin');
+CREATE OR REPLACE FUNCTION public.is_admin_or_super()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.app_users
+    WHERE id = auth.uid() AND role IN ('super_admin', 'admin') AND status = 'active'
+  );
+$$;
 
-## contributions policies
-CREATE POLICY "contributions_select" ON public.contributions FOR SELECT TO authenticated USING (true);
-CREATE POLICY "contributions_insert" ON public.contributions FOR INSERT TO authenticated WITH CHECK (public.get_my_role() IN ('super_admin','editor'));
-CREATE POLICY "contributions_update" ON public.contributions FOR UPDATE TO authenticated USING (public.get_my_role() = 'super_admin' OR (public.get_my_role() = 'editor' AND added_by = auth.uid())) WITH CHECK (public.get_my_role() = 'super_admin' OR (public.get_my_role() = 'editor' AND added_by = auth.uid()));
-CREATE POLICY "contributions_delete" ON public.contributions FOR DELETE TO authenticated USING (public.get_my_role() = 'super_admin');
+CREATE OR REPLACE FUNCTION public.is_officer()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.app_users
+    WHERE id = auth.uid() AND role IN ('super_admin', 'admin', 'editor') AND status = 'active'
+  );
+$$;
 
-## app_users policies
-CREATE POLICY "app_users_select" ON public.app_users FOR SELECT TO authenticated USING (true);
-CREATE POLICY "app_users_insert" ON public.app_users FOR INSERT TO authenticated WITH CHECK (public.get_my_role() = 'super_admin');
-CREATE POLICY "app_users_update" ON public.app_users FOR UPDATE TO authenticated USING (public.get_my_role() = 'super_admin' OR id = auth.uid()) WITH CHECK (public.get_my_role() = 'super_admin' OR id = auth.uid());
-CREATE POLICY "app_users_delete" ON public.app_users FOR DELETE TO authenticated USING (public.get_my_role() = 'super_admin');
+CREATE OR REPLACE FUNCTION public.is_member()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.app_users
+    WHERE id = auth.uid() AND status = 'active'
+  );
+$$;
+```
 
-## Storage: members bucket policies
-CREATE POLICY "storage_members_select" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'members');
-CREATE POLICY "storage_members_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'members' AND public.get_my_role() IN ('super_admin','editor'));
-CREATE POLICY "storage_members_delete" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'members' AND public.get_my_role() = 'super_admin');
+---
 
-## Points recalculation trigger
-CREATE OR REPLACE FUNCTION public.recalculate_member_points()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE target_reg_no TEXT;
-BEGIN
-  IF TG_OP = 'DELETE' THEN target_reg_no := OLD.member_reg_no;
-  ELSE target_reg_no := NEW.member_reg_no; END IF;
-  UPDATE public.members
-  SET total_points = COALESCE((SELECT SUM(points) FROM public.contributions WHERE member_reg_no = target_reg_no), 0),
-      updated_at = NOW()
-  WHERE reg_no = target_reg_no;
-  RETURN COALESCE(NEW, OLD);
-END; $$;
+## 2. Row Level Security (RLS) Policies with Subquery Optimization
 
-DROP TRIGGER IF EXISTS trg_recalculate_points ON public.contributions;
-CREATE TRIGGER trg_recalculate_points
-  AFTER INSERT OR UPDATE OR DELETE ON public.contributions
-  FOR EACH ROW EXECUTE FUNCTION public.recalculate_member_points();
+Wrap all security helper calls in subqueries (`(SELECT public.is_officer())`). This instructs PostgreSQL to evaluate caller permissions once per query rather than per row scanned.
 
-## Netlify environment variables to set
-VITE_SUPABASE_URL = your Supabase project URL
-VITE_SUPABASE_ANON_KEY = your anon key
-NEVER add the service_role key to Netlify.
+### `members` Table
+```sql
+ALTER TABLE public.members ENABLE ROW LEVEL SECURITY;
 
-## Supabase Auth settings
-- Site URL: your Netlify URL
-- Redirect URLs: https://your-site.netlify.app/**
-- Disable email confirmation (internal tool)
-- Set members storage bucket to Private
+CREATE POLICY "members_select" ON public.members 
+  FOR SELECT TO authenticated USING ((SELECT public.is_member()));
+
+CREATE POLICY "members_insert" ON public.members 
+  FOR INSERT TO authenticated WITH CHECK ((SELECT public.is_officer()));
+
+CREATE POLICY "members_update" ON public.members 
+  FOR UPDATE TO authenticated USING ((SELECT public.is_officer())) WITH CHECK ((SELECT public.is_officer()));
+
+CREATE POLICY "members_delete" ON public.members 
+  FOR DELETE TO authenticated USING ((SELECT public.is_admin_or_super()));
+```
+
+### `contributions` Table
+```sql
+ALTER TABLE public.contributions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "contributions_select" ON public.contributions 
+  FOR SELECT TO authenticated USING ((SELECT public.is_member()));
+
+CREATE POLICY "contributions_insert" ON public.contributions 
+  FOR INSERT TO authenticated WITH CHECK ((SELECT public.is_officer()));
+
+CREATE POLICY "contributions_update" ON public.contributions 
+  FOR UPDATE TO authenticated 
+  USING ((SELECT public.is_admin_or_super()) OR ((SELECT public.is_officer()) AND added_by = (SELECT auth.uid())));
+
+CREATE POLICY "contributions_delete" ON public.contributions 
+  FOR DELETE TO authenticated USING ((SELECT public.is_admin_or_super()));
+```
+
+### `app_users` Table
+```sql
+ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "app_users_select" ON public.app_users 
+  FOR SELECT TO authenticated USING ((SELECT public.is_member()));
+
+CREATE POLICY "app_users_update" ON public.app_users 
+  FOR UPDATE TO authenticated 
+  USING ((SELECT public.is_admin_or_super()) OR id = (SELECT auth.uid()));
+-- Note: app_users INSERT and DELETE are reserved exclusively for service_role (Edge Functions).
+```
+
+### `system_logs` & `security_events` Tables
+```sql
+ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_events ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "system_logs_select" ON public.system_logs 
+  FOR SELECT TO authenticated USING ((SELECT public.is_officer()));
+CREATE POLICY "system_logs_insert" ON public.system_logs 
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "security_events_select" ON public.security_events 
+  FOR SELECT TO authenticated USING ((SELECT public.is_officer()));
+CREATE POLICY "security_events_insert" ON public.security_events 
+  FOR INSERT TO authenticated WITH CHECK (true);
+```
+
+### Storage: `members` Bucket Policies
+```sql
+CREATE POLICY "storage_members_select" ON storage.objects 
+  FOR SELECT USING (bucket_id = 'members');
+
+CREATE POLICY "storage_members_insert" ON storage.objects 
+  FOR INSERT TO authenticated WITH CHECK (bucket_id = 'members' AND (SELECT public.is_officer()));
+
+CREATE POLICY "storage_members_update" ON storage.objects 
+  FOR UPDATE TO authenticated USING (bucket_id = 'members' AND (SELECT public.is_officer()));
+
+CREATE POLICY "storage_members_delete" ON storage.objects 
+  FOR DELETE TO authenticated USING (bucket_id = 'members' AND (SELECT public.is_admin_or_super()));
+```
+
+---
+
+## 3. Deno Edge Functions Deployment
+
+Deploy the serverless functions with administrative service role permissions:
+
+```bash
+supabase functions deploy admin-create-user
+supabase functions deploy admin-delete-user
+supabase functions deploy admin-set-user-status
+supabase functions deploy admin-set-user-password
+supabase functions deploy admin-send-password-reset
+supabase functions deploy admin-change-user-email
+supabase functions deploy admin-reset-mfa
+supabase functions deploy provision-members
+```
+
+Ensure the following secrets are accessible in Supabase Edge Functions:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_ANON_KEY`
+
+---
+
+## 4. Frontend Environment Variables
+
+Configure on Cloudflare Pages / hosting provider:
+```env
+VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-public-key>
+```
+> [!CAUTION]
+> **NEVER** expose `SUPABASE_SERVICE_ROLE_KEY` in frontend environment variables. All administrative operations must flow through Deno Edge Functions.
+
