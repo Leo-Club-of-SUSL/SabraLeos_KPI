@@ -115,4 +115,101 @@ describe('bulkImportService Chunking & Batching', () => {
     expect(result.failed).toBe(1);
     expect(result.errors[0].error).toContain('Duplicate registration number 22ABC1001 in upload file');
   });
+
+  it('normalizes Sri Lankan local phone numbers starting with 0', async () => {
+    const { normalizePhoneNumber } = await import('../bulk-import-service');
+    expect(normalizePhoneNumber('0771234567')).toBe('+94771234567');
+    expect(normalizePhoneNumber('+94771234567')).toBe('+94771234567');
+  });
+
+  it('stages rows, flags DB duplicates, and highlights invalid faculties/batches', async () => {
+    (memberService.checkExistingRegNos as unknown as Mock).mockResolvedValue(new Set(['22EXIST999']));
+
+    const testRows: MemberImportRow[] = [
+      {
+        reg_no: '22NEW001',
+        full_name: 'Valid Member',
+        name_with_initials: 'V. Member',
+        batch: '2023',
+        faculty: 'Computing',
+        whatsapp: '0771234567',
+      },
+      {
+        reg_no: '22EXIST999',
+        full_name: 'Existing Member',
+        name_with_initials: 'E. Member',
+        batch: '2023',
+        faculty: 'Computing',
+        whatsapp: '+94771234567',
+      },
+      {
+        reg_no: '22WRONG02',
+        full_name: 'Invalid Faculty Member',
+        name_with_initials: 'I. Member',
+        batch: 'NonExistentBatch',
+        faculty: 'NonExistentFaculty',
+        whatsapp: '+94771234567',
+      },
+    ];
+
+    const { stagedRows } = await bulkImportService.stageAndValidateRows(
+      testRows,
+      [{ id: '1', name: 'Computing', created_at: '' }],
+      [{ id: '1', name: '2023', created_at: '' }]
+    );
+
+    expect(stagedRows).toHaveLength(3);
+    // Row 1 is valid, phone normalized
+    expect(stagedRows[0].isValid).toBe(true);
+    expect(stagedRows[0].whatsapp).toBe('+94771234567');
+
+    // Row 2 exists in DB
+    expect(stagedRows[1].isValid).toBe(false);
+    expect(stagedRows[1].existsInDb).toBe(true);
+
+    // Row 3 has invalid faculty and batch
+    expect(stagedRows[2].isValid).toBe(false);
+    expect(stagedRows[2].errors.some(e => e.includes('Faculty'))).toBe(true);
+    expect(stagedRows[2].errors.some(e => e.includes('Batch'))).toBe(true);
+  });
+
+  it('re-validates staged rows dynamically when user corrects invalid fields', () => {
+    const validFaculties = new Set(['computing']);
+    const validBatches = new Set(['2023']);
+    const existingInDb = new Set(['22EXIST999']);
+
+    const staged = [
+      {
+        id: 'row-1',
+        rowNumber: 2,
+        reg_no: '22FIX001',
+        full_name: 'Fix Member',
+        name_with_initials: 'F. Member',
+        batch: 'InvalidBatch',
+        faculty: 'InvalidFaculty',
+        whatsapp: '+94771234567',
+        my_lci_num: '',
+        email: '',
+        isValid: false,
+        errors: ['Faculty error', 'Batch error'],
+      },
+    ];
+
+    // Revalidate before fix: invalid
+    const beforeFix = bulkImportService.revalidateStagedRows(staged, validFaculties, validBatches, existingInDb);
+    expect(beforeFix[0].isValid).toBe(false);
+
+    // User selects valid faculty and batch in dropdown
+    const fixedRows = [
+      {
+        ...staged[0],
+        faculty: 'Computing',
+        batch: '2023',
+      },
+    ];
+
+    const afterFix = bulkImportService.revalidateStagedRows(fixedRows, validFaculties, validBatches, existingInDb);
+    expect(afterFix[0].isValid).toBe(true);
+    expect(afterFix[0].errors).toHaveLength(0);
+  });
 });
