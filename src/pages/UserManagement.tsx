@@ -31,6 +31,7 @@ export function UserManagement() {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [schemaStatus, setSchemaStatus] = useState<{ matches: boolean; current: string | null; expected: string } | null>(null);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [cleaningOrphans, setCleaningOrphans] = useState(false);
 
   const permissions = usePermissions();
 
@@ -181,10 +182,42 @@ export function UserManagement() {
     }
   };
 
+  const orphanedAccounts = users.filter((u) => {
+    if (!u.linked_member_reg_no || u.role !== 'member') return false;
+    const cleanReg = u.linked_member_reg_no.trim().toUpperCase();
+    return !members.some((m) => m.reg_no.trim().toUpperCase() === cleanReg);
+  });
+
+  const handleCleanupOrphans = async () => {
+    if (!confirm(`Are you sure you want to clean up ${orphanedAccounts.length} orphaned account(s)? These login accounts belong to members that have been deleted.`)) {
+      return;
+    }
+    try {
+      setCleaningOrphans(true);
+      const res = await userService.cleanupOrphanedMemberAccounts();
+      setActionMessage({ type: 'success', text: `Cleaned up ${res.deleted_count ?? 0} orphaned member account(s).` });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to clean up orphaned accounts:', err);
+      setActionMessage({ type: 'error', text: `Cleanup failed: ${err instanceof Error ? err.message : 'Unknown error'}` });
+    } finally {
+      setCleaningOrphans(false);
+    }
+  };
+
   const getMemberName = (regNo: string | null) => {
     if (!regNo) return '-';
-    const member = members.find((m) => m.reg_no === regNo);
-    return member ? `${member.name_with_initials} (${regNo})` : regNo;
+    const cleanReg = regNo.trim().toUpperCase();
+    const member = members.find((m) => m.reg_no.trim().toUpperCase() === cleanReg);
+    if (member) return `${member.name_with_initials} (${member.reg_no})`;
+    return (
+      <span className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
+        <span>{regNo}</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 font-normal">
+          Member Deleted
+        </span>
+      </span>
+    );
   };
 
   if (loading) {
@@ -358,7 +391,26 @@ export function UserManagement() {
       </div>
 
       {activeTab === 'users' && (
-        <div className="glass-panel rounded-3xl shadow-lg border border-gray-200/80 dark:border-white/10 overflow-hidden">
+        <div className="space-y-4">
+          {orphanedAccounts.length > 0 && permissions.canManageUsers && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-3 text-amber-800 dark:text-amber-300 text-sm">
+                <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  Found <strong>{orphanedAccounts.length}</strong> orphaned member account(s) whose member records were deleted.
+                </span>
+              </div>
+              <button
+                onClick={handleCleanupOrphans}
+                disabled={cleaningOrphans}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold shrink-0 transition-colors disabled:opacity-50 flex items-center gap-2 self-start sm:self-auto shadow-sm"
+              >
+                {cleaningOrphans ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Clean Up Orphaned Accounts
+              </button>
+            </div>
+          )}
+          <div className="glass-panel rounded-3xl shadow-lg border border-gray-200/80 dark:border-white/10 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-gray-50/90 dark:bg-white/5 border-b border-gray-200/80 dark:border-white/5">
@@ -515,6 +567,7 @@ export function UserManagement() {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 

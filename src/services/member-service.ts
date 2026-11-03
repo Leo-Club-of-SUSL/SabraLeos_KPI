@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { db } from '../lib/supabase-helpers';
+import { userService } from './user-service';
 import { sanitizeSearchQuery } from '../lib/sanitize';
 import type { Member, MemberInsert, MemberUpdate } from '../types/database';
 
@@ -232,16 +233,25 @@ export const memberService = {
   },
 
   async softDelete(regNo: string): Promise<void> {
+    const cleanReg = regNo.trim().toUpperCase();
+
     const res = await db()
       .from('members')
       .update({ deleted_at: new Date().toISOString() })
-      .ilike('reg_no', regNo);
+      .ilike('reg_no', cleanReg);
 
     if (res.error) {
       if (res.error.code === '42703') {
-        return this.purge(regNo);
+        return this.purge(cleanReg);
       }
       throw res.error;
+    }
+
+    // Automatically delete login account created for the member
+    try {
+      await userService.deleteByLinkedMember(cleanReg);
+    } catch (accountErr) {
+      console.warn('Member marked as deleted, but account deletion encountered an issue:', accountErr);
     }
   },
 
@@ -255,10 +265,19 @@ export const memberService = {
   },
 
   async purge(regNo: string): Promise<void> {
+    const cleanReg = regNo.trim().toUpperCase();
+
+    // Automatically delete login account created for the member first
+    try {
+      await userService.deleteByLinkedMember(cleanReg);
+    } catch (accountErr) {
+      console.warn('Member purging, but account deletion encountered an issue:', accountErr);
+    }
+
     const { error } = await supabase
       .from('members')
       .delete()
-      .ilike('reg_no', regNo);
+      .ilike('reg_no', cleanReg);
 
     if (error) throw error;
   },

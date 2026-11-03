@@ -281,6 +281,27 @@ export const userService = {
   },
 
   /**
+   * Delete the user account linked to a specific member registration number via Edge Function.
+   */
+  async deleteByLinkedMember(regNo: string): Promise<{ success: boolean; deleted_count?: number }> {
+    if (!regNo || !regNo.trim()) return { success: true, deleted_count: 0 };
+    return callEdgeFunction<{ success: boolean; deleted_count?: number }>(
+      'admin-delete-user',
+      { member_reg_no: regNo.trim() }
+    );
+  },
+
+  /**
+   * Cleanup orphaned member accounts whose linked member has been deleted.
+   */
+  async cleanupOrphanedMemberAccounts(): Promise<{ success: boolean; deleted_count?: number }> {
+    return callEdgeFunction<{ success: boolean; deleted_count?: number }>(
+      'admin-delete-user',
+      { cleanup_orphaned: true }
+    );
+  },
+
+  /**
    * Suspend or reactivate a user via Edge Function.
    */
   async setStatus(userId: string, action: 'suspend' | 'reactivate'): Promise<void> {

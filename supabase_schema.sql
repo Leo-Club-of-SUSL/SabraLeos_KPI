@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS public.avenues (
 CREATE TABLE IF NOT EXISTS public.system_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     timestamp TIMESTAMPTZ DEFAULT NOW(),
-    user_id UUID REFERENCES auth.users(id),
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     user_name TEXT,
     action TEXT NOT NULL,
     details JSONB,
@@ -195,3 +195,64 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_members_updated_at
     BEFORE UPDATE ON public.members
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+
+-- Auto-delete member accounts from auth.users when member is deleted
+CREATE OR REPLACE FUNCTION public.handle_member_account_auto_delete()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_reg_no TEXT;
+  v_user_record RECORD;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_reg_no := OLD.reg_no;
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
+      v_reg_no := NEW.reg_no;
+    ELSE
+      RETURN NEW;
+    END IF;
+  ELSE
+    RETURN NEW;
+  END IF;
+
+  IF v_reg_no IS NULL OR TRIM(v_reg_no) = '' THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+  END IF;
+
+  FOR v_user_record IN (
+    SELECT id, role
+    FROM public.app_users
+    WHERE UPPER(TRIM(linked_member_reg_no)) = UPPER(TRIM(v_reg_no))
+       OR UPPER(TRIM(username)) = UPPER(TRIM(v_reg_no))
+  ) LOOP
+    IF v_user_record.role IN ('super_admin', 'editor') THEN
+      UPDATE public.app_users
+      SET linked_member_reg_no = NULL
+      WHERE id = v_user_record.id;
+    ELSE
+      DELETE FROM auth.users WHERE id = v_user_record.id;
+    END IF;
+  END LOOP;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  ELSE
+    RETURN NEW;
+  END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_member_account_auto_delete_delete ON public.members;
+CREATE TRIGGER trg_member_account_auto_delete_delete
+  BEFORE DELETE ON public.members
+  FOR EACH ROW EXECUTE FUNCTION public.handle_member_account_auto_delete();
+
+DROP TRIGGER IF EXISTS trg_member_account_auto_delete_soft ON public.members;
+CREATE TRIGGER trg_member_account_auto_delete_soft
+  AFTER UPDATE OF deleted_at ON public.members
+  FOR EACH ROW EXECUTE FUNCTION public.handle_member_account_auto_delete();
