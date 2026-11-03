@@ -177,7 +177,7 @@ export function Members({ initialSearch, initialAction, initialTier }: MembersPr
   const handleDeleteMember = async () => {
     if (!searchResult) return;
     
-    if (!window.confirm(`Are you sure you want to delete ${searchResult.full_name}?`)) {
+    if (!window.confirm(`Are you sure you want to delete ${searchResult.full_name}? This will also delete their member portal login account.`)) {
       return;
     }
 
