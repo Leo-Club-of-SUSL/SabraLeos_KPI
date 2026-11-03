@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { userService } from '../services/user-service';
 import { memberService } from '../services/member-service';
 import { systemService, type SecurityAlert } from '../services/system-service';
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { AppUser, Member, AppUserRole } from '../types/database';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuth } from '../contexts/AuthContext';
 import { PageSkeleton } from '../components/PageSkeleton';
 
 const SystemDataManagement = lazy(() =>
@@ -34,6 +35,111 @@ export function UserManagement() {
   const [cleaningOrphans, setCleaningOrphans] = useState(false);
 
   const permissions = usePermissions();
+  const { appUser } = useAuth();
+  const currentActorUsername = appUser?.username || 'Officer';
+  const [alertFilter, setAlertFilter] = useState<'active' | 'ignored' | 'resolved' | 'all'>('active');
+
+  const isAlertIgnored = (alert: SecurityAlert) =>
+    Boolean(alert.is_resolved && (alert.metadata?.status === 'ignored' || alert.metadata?.is_ignored === true));
+
+  const isAlertResolved = (alert: SecurityAlert) =>
+    Boolean(alert.is_resolved && !isAlertIgnored(alert));
+
+  const isAlertActive = (alert: SecurityAlert) =>
+    !alert.is_resolved;
+
+  const activeAlerts = useMemo(() => alerts.filter(isAlertActive), [alerts]);
+  const ignoredAlerts = useMemo(() => alerts.filter(isAlertIgnored), [alerts]);
+  const resolvedAlerts = useMemo(() => alerts.filter(isAlertResolved), [alerts]);
+
+  const displayedAlerts = useMemo(() => {
+    switch (alertFilter) {
+      case 'active':
+        return activeAlerts;
+      case 'ignored':
+        return ignoredAlerts;
+      case 'resolved':
+        return resolvedAlerts;
+      case 'all':
+      default:
+        return alerts;
+    }
+  }, [alertFilter, activeAlerts, ignoredAlerts, resolvedAlerts, alerts]);
+
+  const handleResolveAlert = async (alert: SecurityAlert) => {
+    try {
+      // Optimistic state update
+      setAlerts(prev => prev.map(a => a.id === alert.id ? {
+        ...a,
+        is_resolved: true,
+        metadata: { ...a.metadata, status: 'resolved', is_ignored: false, resolved_at: new Date().toISOString() }
+      } : a));
+
+      await systemService.resolveSecurityAlert(alert.id, alert.metadata);
+
+      void logService.logSecurityEvent('SECURITY_ALERT_RESOLVED', {
+        alert_id: alert.id,
+        alert_type: alert.alert_type,
+        title: alert.title,
+        actor_username: currentActorUsername,
+      });
+      setActionMessage({ type: 'success', text: `Security alert "${alert.title}" resolved.` });
+    } catch (err) {
+      console.error('Failed to resolve alert:', err);
+      setActionMessage({ type: 'error', text: 'Failed to resolve alert. Please try again.' });
+      await loadData();
+    }
+  };
+
+  const handleIgnoreAlert = async (alert: SecurityAlert) => {
+    try {
+      // Optimistic state update
+      setAlerts(prev => prev.map(a => a.id === alert.id ? {
+        ...a,
+        is_resolved: true,
+        metadata: { ...a.metadata, status: 'ignored', is_ignored: true, ignored_at: new Date().toISOString() }
+      } : a));
+
+      await systemService.ignoreSecurityAlert(alert.id, alert.metadata);
+
+      void logService.logSecurityEvent('SECURITY_ALERT_IGNORED', {
+        alert_id: alert.id,
+        alert_type: alert.alert_type,
+        title: alert.title,
+        actor_username: currentActorUsername,
+      });
+      setActionMessage({ type: 'success', text: `Security alert "${alert.title}" ignored.` });
+    } catch (err) {
+      console.error('Failed to ignore alert:', err);
+      setActionMessage({ type: 'error', text: 'Failed to ignore alert. Please try again.' });
+      await loadData();
+    }
+  };
+
+  const handleReopenAlert = async (alert: SecurityAlert) => {
+    try {
+      // Optimistic state update
+      setAlerts(prev => prev.map(a => a.id === alert.id ? {
+        ...a,
+        is_resolved: false,
+        metadata: { ...a.metadata, status: 'active', is_ignored: false }
+      } : a));
+
+      await systemService.reopenSecurityAlert(alert.id, alert.metadata);
+
+      void logService.logSecurityEvent('SECURITY_ALERT_REOPENED', {
+        alert_id: alert.id,
+        alert_type: alert.alert_type,
+        title: alert.title,
+        actor_username: currentActorUsername,
+      });
+      setActionMessage({ type: 'success', text: `Security alert "${alert.title}" reopened.` });
+    } catch (err) {
+      console.error('Failed to reopen alert:', err);
+      setActionMessage({ type: 'error', text: 'Failed to reopen alert. Please try again.' });
+      await loadData();
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -87,7 +193,14 @@ export function UserManagement() {
       await userService.setStatus(user.id, action);
       void logService.logSecurityEvent(
         action === 'suspend' ? 'USER_SUSPENDED' : 'USER_REACTIVATED',
-        { target_user_id: user.id, username: user.username, designation: user.designation, role: user.role },
+        {
+          target_user_id: user.id,
+          target_username: user.username,
+          username: user.username,
+          actor_username: currentActorUsername,
+          designation: user.designation,
+          role: user.role,
+        },
         user.id
       );
       setActionMessage({ type: 'success', text: `User successfully ${action}ed.` });
@@ -109,7 +222,13 @@ export function UserManagement() {
       await userService.resetMfa(user.id);
       void logService.logSecurityEvent(
         'MFA_RESET_ADMIN',
-        { target_user_id: user.id, username: user.username, role: user.role },
+        {
+          target_user_id: user.id,
+          target_username: user.username,
+          username: user.username,
+          actor_username: currentActorUsername,
+          role: user.role,
+        },
         user.id
       );
       setActionMessage({ type: 'success', text: `MFA factors reset for ${user.username}.` });
@@ -139,7 +258,13 @@ export function UserManagement() {
       await userService.delete(userId);
       void logService.logSecurityEvent(
         'USER_DELETED',
-        { target_user_id: userId, username, role: userRole },
+        {
+          target_user_id: userId,
+          target_username: username,
+          username,
+          actor_username: currentActorUsername,
+          role: userRole,
+        },
         userId
       );
       setActionMessage({ type: 'success', text: 'User removed.' });
@@ -602,51 +727,179 @@ export function UserManagement() {
             <div className="p-5 rounded-3xl glass-panel border border-gray-200/80 dark:border-white/10 shadow-sm">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Security Alerts</span>
               <p className="text-2xl font-black text-maroon-600 dark:text-neon-blue mt-1">
-                {alerts.length}
+                {activeAlerts.length}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">Unresolved security alerts</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {activeAlerts.length === 0 ? 'No active unresolved alerts' : `${activeAlerts.length} active alert${activeAlerts.length > 1 ? 's' : ''}`}
+              </p>
             </div>
           </div>
 
           <div className="glass-panel rounded-3xl shadow-lg border border-gray-200/80 dark:border-white/10 p-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-red-500" />
-              Active Security Alerts
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-red-500" />
+                  Security Alerts &amp; Anomaly Monitor
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Automated detection of account mutations, privilege escalation, and anomalies</p>
+              </div>
 
-            {alerts.length === 0 ? (
+              {/* Alert Filter Tabs */}
+              <div className="flex items-center gap-1.5 p-1 bg-gray-100 dark:bg-white/5 rounded-2xl border border-gray-200/80 dark:border-white/10 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setAlertFilter('active')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    alertFilter === 'active'
+                      ? 'bg-white dark:bg-white/15 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Active ({activeAlerts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAlertFilter('ignored')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    alertFilter === 'ignored'
+                      ? 'bg-white dark:bg-white/15 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Ignored ({ignoredAlerts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAlertFilter('resolved')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    alertFilter === 'resolved'
+                      ? 'bg-white dark:bg-white/15 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Resolved ({resolvedAlerts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAlertFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    alertFilter === 'all'
+                      ? 'bg-white dark:bg-white/15 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  All ({alerts.length})
+                </button>
+              </div>
+            </div>
+
+            {displayedAlerts.length === 0 ? (
               <div className="p-10 text-center text-gray-500 dark:text-gray-400">
                 <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
-                <p className="font-bold text-gray-800 dark:text-gray-200">System Secure & Healthy</p>
-                <p className="text-xs mt-1">No unhandled security alerts or anomalies detected.</p>
+                <p className="font-bold text-gray-800 dark:text-gray-200">
+                  {alertFilter === 'active' ? 'System Secure & Healthy' : `No ${alertFilter.toUpperCase()} Alerts`}
+                </p>
+                <p className="text-xs mt-1">
+                  {alertFilter === 'active'
+                    ? 'No unhandled security alerts or anomalies currently active.'
+                    : `No security alerts found in the ${alertFilter} view.`}
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
-                {alerts.map((alert) => (
-                  <div key={alert.id} className="p-4 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-950/30 flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          alert.severity === 'critical' ? 'bg-red-600 text-white' : 'bg-amber-600 text-white'
-                        }`}>
-                          {alert.severity}
-                        </span>
-                        <span className="font-bold text-gray-900 dark:text-white text-sm">{alert.title}</span>
-                      </div>
-                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1.5">{alert.description}</p>
-                      <span className="text-[11px] text-gray-400 mt-2 block font-mono">{new Date(alert.created_at).toLocaleString()}</span>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        await systemService.resolveSecurityAlert(alert.id);
-                        loadData();
-                      }}
-                      className="px-4 py-2 text-xs font-bold bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors shrink-0 shadow-sm"
+                {displayedAlerts.map((alert) => {
+                  const isIgnored = isAlertIgnored(alert);
+                  const isResolved = isAlertResolved(alert);
+                  const isActive = isAlertActive(alert);
+
+                  return (
+                    <div
+                      key={alert.id}
+                      className={`p-4 rounded-2xl border transition-all flex items-start justify-between gap-4 ${
+                        isIgnored
+                          ? 'border-gray-200 dark:border-white/10 bg-gray-50/70 dark:bg-white/5 opacity-75'
+                          : isResolved
+                          ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20'
+                          : 'border-red-200 dark:border-red-900/50 bg-red-50/60 dark:bg-red-950/30'
+                      }`}
                     >
-                      Resolve
-                    </button>
-                  </div>
-                ))}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            alert.severity === 'critical'
+                              ? 'bg-red-600 text-white'
+                              : alert.severity === 'high'
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-blue-600 text-white'
+                          }`}>
+                            {alert.severity}
+                          </span>
+
+                          {isIgnored && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-300">
+                              <EyeOff className="w-3 h-3" />
+                              Ignored
+                            </span>
+                          )}
+
+                          {isResolved && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                              <Check className="w-3 h-3" />
+                              Resolved
+                            </span>
+                          )}
+
+                          {isActive && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300">
+                              Active
+                            </span>
+                          )}
+
+                          <span className="font-bold text-gray-900 dark:text-white text-sm truncate">{alert.title}</span>
+                        </div>
+
+                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1.5 leading-relaxed">{alert.description}</p>
+                        <span className="text-[11px] text-gray-400 mt-2 block font-mono">{new Date(alert.created_at).toLocaleString()}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isActive ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleIgnoreAlert(alert)}
+                              title="Ignore this alert (dismiss from active monitor)"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                            >
+                              <EyeOff className="w-3.5 h-3.5" />
+                              Ignore
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleResolveAlert(alert)}
+                              title="Mark alert as resolved"
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors shadow-sm"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              Resolve
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleReopenAlert(alert)}
+                            title="Reopen alert to active monitor"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Reopen
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -697,6 +950,8 @@ interface AdminSetPasswordModalProps {
 }
 
 function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetPasswordModalProps) {
+  const { appUser } = useAuth();
+  const currentActorUsername = appUser?.username || 'Officer';
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -734,7 +989,13 @@ function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetP
       await userService.adminSetUserPassword(user.id, newPassword.trim());
       void logService.logSecurityEvent(
         'PASSWORD_CHANGED_ADMIN',
-        { target_user_id: user.id, username: user.username, role: user.role },
+        {
+          target_user_id: user.id,
+          target_username: user.username,
+          username: user.username,
+          actor_username: currentActorUsername,
+          role: user.role,
+        },
         user.id
       );
       setCredentials({
@@ -903,6 +1164,8 @@ interface UserModalProps {
 }
 
 function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
+  const { appUser } = useAuth();
+  const currentActorUsername = appUser?.username || 'Officer';
   const [formData, setFormData] = useState({
     email: '',
     username: user?.username || '',
@@ -954,7 +1217,14 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
 
         void logService.logSecurityEvent(
           'USER_PROFILE_UPDATED',
-          { target_user_id: user.id, username: formData.username, role: formData.role, designation: formData.designation },
+          {
+            target_user_id: user.id,
+            target_username: formData.username,
+            username: formData.username,
+            actor_username: currentActorUsername,
+            role: formData.role,
+            designation: formData.designation,
+          },
           user.id
         );
 
@@ -963,7 +1233,13 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
           await userService.adminSetUserPassword(user.id, formData.password.trim());
           void logService.logSecurityEvent(
             'PASSWORD_CHANGED_ADMIN',
-            { target_user_id: user.id, username: formData.username, role: formData.role },
+            {
+              target_user_id: user.id,
+              target_username: formData.username,
+              username: formData.username,
+              actor_username: currentActorUsername,
+              role: formData.role,
+            },
             user.id
           );
           setCreatedCredentials({
@@ -994,7 +1270,14 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
 
         void logService.logSecurityEvent(
           'OFFICER_CREATED',
-          { email: formData.email, username: formData.username, role: formData.role, designation: formData.designation },
+          {
+            email: formData.email,
+            username: formData.username,
+            target_username: formData.username,
+            actor_username: currentActorUsername,
+            role: formData.role,
+            designation: formData.designation,
+          },
           res.user.id
         );
 

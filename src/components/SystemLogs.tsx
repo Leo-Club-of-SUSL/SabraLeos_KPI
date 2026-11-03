@@ -89,17 +89,65 @@ export function SystemLogs() {
       detailsObj: Record<string, unknown> | null,
       explicitName?: string | null,
       actorId?: string | null,
-      userId?: string | null
+      userId?: string | null,
+      action?: string
     ): string => {
-      const fromDetails = detailsObj?.username || detailsObj?.user_name || detailsObj?.email;
-      if (fromDetails) return String(fromDetails);
-      if (explicitName && explicitName !== 'Security Guardian' && explicitName !== 'Security System') {
+      // 1. Explicit actor_username / actor_name in details (highest accuracy)
+      const actorFromDetails = detailsObj?.actor_username || detailsObj?.actor_name;
+      if (actorFromDetails) return String(actorFromDetails);
+
+      // 2. If actorId is known and exists in directory, return it
+      if (actorId && fullDir.has(actorId)) return fullDir.get(actorId)!;
+
+      // 3. Explicit name from database (e.g. system_logs.user_name), if not a system placeholder
+      if (
+        explicitName &&
+        explicitName !== 'Security Guardian' &&
+        explicitName !== 'Security System' &&
+        explicitName !== 'Officer' &&
+        explicitName !== 'System'
+      ) {
         return String(explicitName);
       }
-      if (actorId && fullDir.has(actorId)) return fullDir.get(actorId)!;
-      if (userId && fullDir.has(userId)) return fullDir.get(userId)!;
+
+      // 4. For self-actions (login, logout, auth session, password self change), detailsObj.username IS the actor
+      const isSelfAction = action && (
+        action.includes('LOGIN') ||
+        action.includes('LOGOUT') ||
+        action.includes('AUTH') ||
+        action.includes('SESSION')
+      );
+      if (isSelfAction) {
+        const selfFromDetails = detailsObj?.username || detailsObj?.user_name;
+        if (selfFromDetails) return String(selfFromDetails);
+        if (userId && fullDir.has(userId)) return fullDir.get(userId)!;
+      }
+
+      // 5. For failed logins / unauthenticated attempts
+      if (action && (action.includes('LOGIN_FAILED') || action.includes('LOCKOUT'))) {
+        if (detailsObj?.email) return String(detailsObj.email);
+        return 'Unauthenticated Visitor';
+      }
+
+      // 6. If actorId exists but not in directory yet
       if (actorId) return `Officer (${String(actorId).substring(0, 8)})`;
-      if (userId) return `User (${String(userId).substring(0, 8)})`;
+
+      // 7. If explicitName has fallback like 'Officer'
+      if (explicitName) return String(explicitName);
+
+      // 8. If action does not target another user, and userId is known in directory
+      const isTargetAction = action && (
+        action.includes('SUSPEND') ||
+        action.includes('REACTIVATE') ||
+        action.includes('DELETE') ||
+        action.includes('RESET') ||
+        action.includes('CREATE_USER') ||
+        action.includes('UPDATE_USER')
+      );
+      if (!isTargetAction && userId && fullDir.has(userId)) {
+        return fullDir.get(userId)!;
+      }
+
       return 'System Operator';
     };
 
@@ -137,7 +185,8 @@ export function SystemLogs() {
         details,
         item.user_name as string,
         item.user_id as string,
-        item.user_id as string
+        item.user_id as string,
+        act
       );
 
       return {
@@ -179,7 +228,8 @@ export function SystemLogs() {
         detailsObj,
         item.user_name as string,
         item.actor_id as string,
-        item.user_id as string
+        item.user_id as string,
+        evt
       );
 
       return {

@@ -99,13 +99,91 @@ export const systemService = {
     return (data as SecurityAlert[]) || [];
   },
 
-  async resolveSecurityAlert(alertId: string): Promise<void> {
-    const { error } = await supabase
-      .from('security_alerts')
-      .update({ is_resolved: true })
-      .eq('id', alertId);
+  async resolveSecurityAlert(alertId: string, currentMetadata: Record<string, unknown> = {}): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // First try RPC
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: rpcError } = await (supabase.rpc as any)('resolve_security_alert', {
+      p_alert_id: alertId,
+      p_action: 'resolved',
+    });
 
-    if (error) throw error;
+    if (rpcError) {
+      const { error } = await supabase
+        .from('security_alerts')
+        .update({
+          is_resolved: true,
+          resolved_by: user?.id ?? null,
+          resolved_at: new Date().toISOString(),
+          metadata: {
+            ...currentMetadata,
+            status: 'resolved',
+            is_ignored: false,
+            resolved_at: new Date().toISOString(),
+          },
+        })
+        .eq('id', alertId);
+
+      if (error) throw error;
+    }
+  },
+
+  async ignoreSecurityAlert(alertId: string, currentMetadata: Record<string, unknown> = {}): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // First try RPC
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: rpcError } = await (supabase.rpc as any)('resolve_security_alert', {
+      p_alert_id: alertId,
+      p_action: 'ignored',
+    });
+
+    if (rpcError) {
+      const { error } = await supabase
+        .from('security_alerts')
+        .update({
+          is_resolved: true,
+          resolved_by: user?.id ?? null,
+          resolved_at: new Date().toISOString(),
+          metadata: {
+            ...currentMetadata,
+            status: 'ignored',
+            is_ignored: true,
+            ignored_at: new Date().toISOString(),
+          },
+        })
+        .eq('id', alertId);
+
+      if (error) throw error;
+    }
+  },
+
+  async reopenSecurityAlert(alertId: string, currentMetadata: Record<string, unknown> = {}): Promise<void> {
+    // First try RPC
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: rpcError } = await (supabase.rpc as any)('resolve_security_alert', {
+      p_alert_id: alertId,
+      p_action: 'active',
+    });
+
+    if (rpcError) {
+      const { error } = await supabase
+        .from('security_alerts')
+        .update({
+          is_resolved: false,
+          resolved_by: null,
+          resolved_at: null,
+          metadata: {
+            ...currentMetadata,
+            status: 'active',
+            is_ignored: false,
+          },
+        })
+        .eq('id', alertId);
+
+      if (error) throw error;
+    }
   },
 
   async getSecurityEvents(): Promise<SecurityEvent[]> {

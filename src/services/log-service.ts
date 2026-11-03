@@ -9,17 +9,41 @@ import { supabase } from '../lib/supabase';
  */
 export const logService = {
   /**
-   * Log an officer login event.
-   * Called ONCE per successful login from AuthContext.signIn().
-   * The RPC derives identity from auth.uid() server-side and has a 15-second debounce.
+   * Log a login event with user ID and username.
+   * Logs to both system_logs (via log_login) and security_events (via log_security_event).
+   * Has server-side and client-side debounce to prevent duplicate spam.
    */
-  async logLogin(): Promise<void> {
+  async logLogin(userId?: string, username?: string): Promise<void> {
     try {
+      // 1. Call dedicated log_login RPC (activity audit stream)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.rpc as any)('log_login');
-      if (error) console.warn('Login log failed (non-fatal):', error.message);
+      const resActivity = await (supabase.rpc as any)('log_login');
+      if (resActivity?.error) {
+        console.warn('Activity login log failed (non-fatal):', resActivity.error.message);
+      }
     } catch (err) {
-      console.warn('Login log error (non-fatal):', err);
+      console.warn('Activity login log error (non-fatal):', err);
+    }
+
+    try {
+      // 2. Call log_security_event RPC (security audit stream)
+      const uname = username || 'user';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resSecurity = await (supabase.rpc as any)('log_security_event', {
+        p_event_type: 'LOGIN',
+        p_target_user_id: userId || null,
+        p_details: {
+          username: uname,
+          actor_username: uname,
+          method: 'password',
+          user_id: userId || null,
+        },
+      });
+      if (resSecurity?.error) {
+        console.warn('Security login log failed (non-fatal):', resSecurity.error.message);
+      }
+    } catch (err) {
+      console.warn('Security login log error (non-fatal):', err);
     }
   },
 
@@ -46,7 +70,12 @@ export const logService = {
       const resSecurity = await (supabase.rpc as any)('log_security_event', {
         p_event_type: 'LOGOUT',
         p_target_user_id: userId,
-        p_details: { username, user_id: userId },
+        p_details: {
+          username,
+          actor_username: username,
+          method: 'manual',
+          user_id: userId,
+        },
       });
       if (resSecurity?.error) {
         console.warn('Security logout log failed (non-fatal):', resSecurity.error.message);

@@ -155,6 +155,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      if (event === 'SIGNED_IN' && session?.user) {
+        const now = Date.now();
+        if (now - lastLoginLogTimeRef.current > 15000) {
+          lastLoginLogTimeRef.current = now;
+          const targetUid = session.user.id;
+          const fallbackUname = session.user.email?.split('@')[0] || 'user';
+          setTimeout(() => {
+            void logService.logLogin(targetUid, fallbackUname);
+          }, 500);
+        }
+      }
+
       // Defer execution outside the auth callback stack to prevent deadlock
       setTimeout(() => {
         void loadUserContext(session.user);
@@ -211,7 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (now - lastLoginLogTimeRef.current > 15000) {
         lastLoginLogTimeRef.current = now;
         try {
-          await logService.logLogin();
+          await logService.logLogin(data.user.id, userProfile.username);
         } catch {
           // Non-fatal
         }
