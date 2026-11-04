@@ -115,12 +115,34 @@ export const userService = {
   },
 
   async getAll(): Promise<AppUser[]> {
+    // 1. Try secure RPC that joins auth.users and app_users for complete emails
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: rpcData, error: rpcError } = await (supabase.rpc as any)('get_all_users');
+      if (!rpcError && Array.isArray(rpcData)) {
+        return rpcData as AppUser[];
+      }
+    } catch {
+      // Fallback
+    }
+
+    // 2. Direct select from app_users with email
     const { data, error } = await supabase
       .from('app_users')
-      .select('id, username, designation, role, status, linked_member_reg_no, created_at')
+      .select('id, username, email, designation, role, status, linked_member_reg_no, created_at')
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      // 3. Fallback without email column if table migration is not yet applied
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('app_users')
+        .select('id, username, designation, role, status, linked_member_reg_no, created_at')
+        .order('created_at', { ascending: false });
+
+      if (fallbackError) throw fallbackError;
+      return (fallbackData as AppUser[]) || [];
+    }
+
     return (data as AppUser[]) || [];
   },
 
@@ -241,8 +263,8 @@ export const userService = {
   async adminSetUserPassword(
     userId: string,
     newPassword: string
-  ): Promise<{ success: boolean; message: string; temporaryPassword: string }> {
-    return callEdgeFunction<{ success: boolean; message: string; temporaryPassword: string }>(
+  ): Promise<{ success: boolean; message: string; temporaryPassword: string; email?: string }> {
+    return callEdgeFunction<{ success: boolean; message: string; temporaryPassword: string; email?: string }>(
       'admin-set-user-password',
       { user_id: userId, new_password: newPassword }
     );

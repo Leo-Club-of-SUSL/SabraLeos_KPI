@@ -307,6 +307,7 @@ export type ContributionUpdate = {
 export type AppUser = {
   id: string;
   username: string;
+  email?: string | null;
   designation: string;
   role: AppUserRole;
   status: AppUserStatus;
@@ -317,6 +318,7 @@ export type AppUser = {
 export type AppUserInsert = {
   id: string;
   username: string;
+  email?: string | null;
   designation: string;
   role: AppUserRole;
   status?: AppUserStatus;
@@ -325,6 +327,7 @@ export type AppUserInsert = {
 
 export type AppUserUpdate = {
   username?: string;
+  email?: string | null;
   designation?: string;
   role?: AppUserRole;
   status?: AppUserStatus;

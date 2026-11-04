@@ -97,13 +97,15 @@ Deno.serve(async (req: Request) => {
 
     const newUserId = authData.user.id;
 
-    // 4. Create app_users profile (try role, fallback to 'viewer' if role is 'member' and DB constraint has ('super_admin','editor','viewer'))
+    // 4. Create app_users profile (try with email, fallback to without if column not yet added)
     let roleToUse: string = role;
+    const cleanEmail = email.trim().toLowerCase();
     let insertResult = await serviceClient
       .from('app_users')
       .insert({
         id: newUserId,
         username: username.trim(),
+        email: cleanEmail,
         designation: designation.trim(),
         role: roleToUse,
         linked_member_reg_no: linked_member_reg_no || null,
@@ -111,6 +113,21 @@ Deno.serve(async (req: Request) => {
       })
       .select()
       .single();
+
+    if (insertResult.error && insertResult.error.message.includes('column "email"')) {
+      insertResult = await serviceClient
+        .from('app_users')
+        .insert({
+          id: newUserId,
+          username: username.trim(),
+          designation: designation.trim(),
+          role: roleToUse,
+          linked_member_reg_no: linked_member_reg_no || null,
+          status: 'active',
+        })
+        .select()
+        .single();
+    }
 
     if (insertResult.error && insertResult.error.message.includes('app_users_role_check') && roleToUse === 'member') {
       roleToUse = 'viewer';

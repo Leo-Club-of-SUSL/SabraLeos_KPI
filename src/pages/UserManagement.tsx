@@ -6,7 +6,7 @@ import { logService } from '../services/log-service';
 import { 
   UserPlus, Shield, Edit as EditIcon, Eye, Loader2, X, Trash2, 
   Settings, Users as UsersIcon, ListTree, UserCheck, UserX, 
-  User, KeyRound, ShieldAlert, AlertTriangle, CheckCircle2, Copy, Check, RefreshCw, EyeOff, ShieldCheck
+  User, KeyRound, ShieldAlert, AlertTriangle, CheckCircle2, Copy, Check, RefreshCw, EyeOff, ShieldCheck, Mail
 } from 'lucide-react';
 import type { AppUser, Member, AppUserRole } from '../types/database';
 import { usePermissions } from '../hooks/usePermissions';
@@ -330,6 +330,20 @@ export function UserManagement() {
     }
   };
 
+  const getUserEmail = (user: AppUser): string => {
+    if (user.email && user.email.includes('@')) {
+      return user.email;
+    }
+    if (user.linked_member_reg_no) {
+      const cleanReg = user.linked_member_reg_no.trim().toUpperCase();
+      const member = members.find((m) => m.reg_no.trim().toUpperCase() === cleanReg);
+      if (member?.email && member.email.includes('@')) {
+        return member.email;
+      }
+    }
+    return '';
+  };
+
   const getMemberName = (regNo: string | null) => {
     if (!regNo) return '-';
     const cleanReg = regNo.trim().toUpperCase();
@@ -544,6 +558,9 @@ export function UserManagement() {
                     User / Username
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Designation
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -566,7 +583,7 @@ export function UserManagement() {
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                       No users found
                     </td>
                   </tr>
@@ -578,17 +595,32 @@ export function UserManagement() {
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className="w-9 h-9 rounded-full bg-maroon-100 dark:bg-maroon-900/20 flex items-center justify-center">
+                          <div className="w-9 h-9 rounded-full bg-maroon-100 dark:bg-maroon-900/20 flex items-center justify-center shrink-0">
                             <span className="text-sm font-bold text-maroon-600 dark:text-maroon-400">
                               {(user.username || 'U').charAt(0).toUpperCase()}
                             </span>
                           </div>
-                          <div className="ml-3">
-                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                          <div className="ml-3 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
                               {user.username || `User (${user.id.substring(0, 8)})`}
                             </p>
+                            {getUserEmail(user) && (
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400 font-mono truncate">
+                                {getUserEmail(user)}
+                              </p>
+                            )}
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                        {getUserEmail(user) ? (
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                            <span className="select-all">{getUserEmail(user)}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">No email on file</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                         {user.designation || '-'}
@@ -960,7 +992,11 @@ function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetP
   const [copied, setCopied] = useState(false);
 
   const member = members.find(m => m.reg_no === user.linked_member_reg_no);
-  const userEmail = member?.email || user.username;
+  const userEmail = (user.email && user.email.includes('@'))
+    ? user.email
+    : (member?.email && member.email.includes('@'))
+      ? member.email
+      : '';
 
   useEffect(() => {
     generateRandom();
@@ -986,7 +1022,7 @@ function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetP
     setLoading(true);
 
     try {
-      await userService.adminSetUserPassword(user.id, newPassword.trim());
+      const res = await userService.adminSetUserPassword(user.id, newPassword.trim());
       void logService.logSecurityEvent(
         'PASSWORD_CHANGED_ADMIN',
         {
@@ -999,7 +1035,7 @@ function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetP
         user.id
       );
       setCredentials({
-        email: userEmail,
+        email: res.email || userEmail || 'No email on file',
         password: newPassword.trim(),
       });
     } catch (err) {
@@ -1053,7 +1089,7 @@ function AdminSetPasswordModal({ user, members, onSuccess, onCancel }: AdminSetP
                 <span className="text-gray-900 dark:text-white font-bold">{user.username} ({user.role})</span>
               </div>
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Login Email / Identifier</span>
+                <span className="text-gray-500 uppercase text-[10px] block font-sans font-bold">Login Email</span>
                 <span className="text-gray-900 dark:text-white select-all">{credentials.email}</span>
               </div>
               <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -1166,8 +1202,15 @@ interface UserModalProps {
 function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
   const { appUser } = useAuth();
   const currentActorUsername = appUser?.username || 'Officer';
+  const member = members.find(m => m.reg_no === user?.linked_member_reg_no);
+  const initialEmail = (user?.email && user.email.includes('@'))
+    ? user.email
+    : (member?.email && member.email.includes('@'))
+      ? member.email
+      : '';
+
   const [formData, setFormData] = useState({
-    email: '',
+    email: initialEmail,
     username: user?.username || '',
     designation: user?.designation || '',
     role: (user?.role || 'viewer') as AppUserRole,
@@ -1230,7 +1273,7 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
 
         // If password was also filled in when editing
         if (formData.password && formData.password.trim().length >= 6) {
-          await userService.adminSetUserPassword(user.id, formData.password.trim());
+          const passRes = await userService.adminSetUserPassword(user.id, formData.password.trim());
           void logService.logSecurityEvent(
             'PASSWORD_CHANGED_ADMIN',
             {
@@ -1244,7 +1287,7 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
           );
           setCreatedCredentials({
             username: formData.username,
-            email: formData.email || user.username,
+            email: passRes.email || formData.email || initialEmail || 'No email on file',
             password: formData.password.trim(),
           });
           return;
@@ -1283,7 +1326,7 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
 
         setCreatedCredentials({
           username: res.user.username,
-          email: formData.email,
+          email: formData.email.trim().toLowerCase(),
           password: res.temporaryPassword || passToUse,
         });
       }
@@ -1368,21 +1411,25 @@ function UserModal({ user, members, onSuccess, onCancel }: UserModalProps) {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
-            {!user && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Official Email Address <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                  placeholder="officer@leoclubsusl.lk"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                Official Email Address {!user && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required={!user}
+                disabled={Boolean(user)}
+                placeholder="officer@leoclubsusl.lk"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-maroon-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+              />
+              {user && (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                  Registered account login email address.
+                </p>
+              )}
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">

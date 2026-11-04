@@ -78,7 +78,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // 3. Update password via Supabase Auth Admin
-    const { error: updateError } = await serviceClient.auth.admin.updateUserById(user_id, {
+    const { data: updateData, error: updateError } = await serviceClient.auth.admin.updateUserById(user_id, {
       password: new_password.trim(),
     });
 
@@ -106,6 +106,7 @@ Deno.serve(async (req: Request) => {
         success: true,
         message: 'Password successfully updated for user',
         temporaryPassword: new_password.trim(),
+        email: updateData?.user?.email || null,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
